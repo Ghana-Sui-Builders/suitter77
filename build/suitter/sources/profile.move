@@ -54,6 +54,11 @@ module suitter::profile {
         transfer::share_object(follow_registry);
     }
 
+    #[test_only]
+    public fun init_for_testing(ctx: &mut TxContext) {
+        init(ctx);
+    }
+
     entry fun create_profile(
         global_registry: &mut GlobalRegistry,
         profile_registry: &mut ProfileRegistry,

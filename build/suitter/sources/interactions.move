@@ -81,6 +81,11 @@ module suitter::interactions {
         transfer::share_object(mention_registry);
     }
 
+    #[test_only]
+    public fun init_for_testing(ctx: &mut TxContext) {
+        init(ctx);
+    }
+
     entry fun like_suit(
         global_registry: &mut GlobalRegistry,
         like_registry: &mut LikeRegistry,

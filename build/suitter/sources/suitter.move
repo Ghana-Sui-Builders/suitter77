@@ -114,6 +114,11 @@ module suitter::suitter {
         transfer::share_object(registry);
     }
 
+    #[test_only]
+    public fun init_for_testing(ctx: &mut TxContext) {
+        init(ctx);
+    }
+
     public fun increment_suits(registry: &mut GlobalRegistry) {
         registry.total_suits = registry.total_suits + 1;
     }
