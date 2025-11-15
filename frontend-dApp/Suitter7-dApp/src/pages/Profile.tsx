@@ -4,6 +4,7 @@ import { useAutoCreateProfile } from '../hooks/useAutoCreateProfile';
 import { useProfileMetadata } from '../hooks/useProfileMetadata';
 import { SuitCard } from '../components/SuitCard';
 import { EditProfileModal } from '../components/EditProfileModal';
+import { WalrusService } from '../services/walrus';
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -174,7 +175,7 @@ export function Profile() {
             {profile?.profile_image_blob_id ? (
               <div className="w-24 h-24 rounded-full overflow-hidden bg-muted shrink-0">
                 <img
-                  src={`https://walrus.blob.storage/${profile.profile_image_blob_id}`}
+                  src={WalrusService.getBlobUrl(profile.profile_image_blob_id)}
                   alt={metadata.displayName || profile.username}
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -288,7 +289,7 @@ export function Profile() {
               {profile?.profile_image_blob_id ? (
                 <div className="w-10 h-10 rounded-full overflow-hidden bg-muted shrink-0">
                   <img
-                    src={`https://walrus.blob.storage/${profile.profile_image_blob_id}`}
+                    src={WalrusService.getBlobUrl(profile.profile_image_blob_id)}
                     alt={metadata.displayName || profile.username}
                     className="w-full h-full object-cover"
                     onError={(e) => {

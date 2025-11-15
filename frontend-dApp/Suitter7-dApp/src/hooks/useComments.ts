@@ -86,6 +86,7 @@ export function useComments(suitId: string | null) {
               author: content.fields.author || '',
               content: content.fields.content || '',
               timestamp_ms: Number(content.fields.timestamp_ms || 0),
+              walrus_blob_id: content.fields.walrus_blob_id?.fields?.[0] || undefined,
             } as Comment;
           })
           .filter((comment): comment is Comment => comment !== null)

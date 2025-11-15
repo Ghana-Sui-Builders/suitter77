@@ -40,6 +40,7 @@ export interface Comment {
   author: string;
   content: string;
   timestamp_ms: number;
+  walrus_blob_id?: string;
 }
 
 export interface Repost {
@@ -468,6 +469,44 @@ export function useCommentOnSuit() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suits'] });
       queryClient.invalidateQueries({ queryKey: ['suit'] });
+      queryClient.invalidateQueries({ queryKey: ['comments'] });
+    },
+  });
+}
+
+// Hook to comment on a Suit with media
+export function useCommentOnSuitWithMedia() {
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ suitId, content, walrusBlobId }: { suitId: string; content: string; walrusBlobId: string }) => {
+      return new Promise((resolve, reject) => {
+        const tx = new Transaction();
+        tx.moveCall({
+          target: `${PACKAGE_ID}::interactions::comment_on_suit_with_media`,
+          arguments: [
+            tx.object(GLOBAL_REGISTRY_ID),
+            tx.object(suitId),
+            tx.pure.string(content),
+            tx.pure.string(walrusBlobId),
+            tx.object('0x6'), // Clock object
+          ],
+        });
+
+        signAndExecute(
+          { transaction: tx },
+          {
+            onSuccess: resolve,
+            onError: reject,
+          }
+        );
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['suits'] });
+      queryClient.invalidateQueries({ queryKey: ['suit'] });
+      queryClient.invalidateQueries({ queryKey: ['comments'] });
     },
   });
 }

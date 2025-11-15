@@ -1,20 +1,121 @@
 import { Box, Flex, Text, Button, TextArea, Tabs, TextField } from '@radix-ui/themes';
 import { useCreateSuit } from '../hooks/useContract';
-import { useState } from 'react';
+import { useCurrentAccount } from '@mysten/dapp-kit';
+import { useState, useRef } from 'react';
+import { WalrusService } from '../services/walrus';
+import toast from 'react-hot-toast';
+import { Image, Video, X } from 'lucide-react';
 
 export function CreateSuit() {
+  const account = useCurrentAccount();
   const [activeTab, setActiveTab] = useState<'text' | 'video' | 'image'>('text');
   const [content, setContent] = useState('');
-  const [walrusBlobId] = useState('');
+  const [walrusBlobId, setWalrusBlobId] = useState<string>('');
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
   const [topic, setTopic] = useState('');
   const createSuit = useCreateSuit();
 
+  const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 5MB for Walrus)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size must be less than 5MB');
+      return;
+    }
+
+    setMediaFile(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setMediaPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    // Upload to Walrus
+    setIsUploadingMedia(true);
+    const toastId = toast.loading('Uploading to Walrus...');
+    
+    try {
+      const walrusBlob = await WalrusService.uploadFile(file, account?.address);
+      setWalrusBlobId(walrusBlob.blobId);
+      toast.dismiss(toastId);
+      toast.success('Media uploaded successfully!');
+    } catch (error: any) {
+      toast.dismiss(toastId);
+      toast.error(error?.message || 'Failed to upload media. Please try again.');
+      setMediaFile(null);
+      setMediaPreview(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } finally {
+      setIsUploadingMedia(false);
+    }
+  };
+
+  const removeMedia = () => {
+    setMediaFile(null);
+    setMediaPreview(null);
+    setWalrusBlobId('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleSubmit = () => {
+    if (!account) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+
     if (activeTab === 'text') {
-      createSuit.mutate({ content: content.trim() });
+      if (!content.trim()) {
+        toast.error('Please enter some content');
+        return;
+      }
+      createSuit.mutate(
+        { content: content.trim() },
+        {
+          onSuccess: () => {
+            setContent('');
+            toast.success('Suit posted successfully!');
+          },
+          onError: (error: any) => {
+            toast.error(error?.message || 'Failed to post suit');
+          },
+        }
+      );
     } else {
-      createSuit.mutate({ content: content.trim(), walrusBlobId });
+      if (!walrusBlobId && !content.trim()) {
+        toast.error('Please add media or enter content');
+        return;
+      }
+      if (!walrusBlobId) {
+        toast.error('Please wait for media upload to complete');
+        return;
+      }
+      createSuit.mutate(
+        { content: content.trim() || '', walrusBlobId },
+        {
+          onSuccess: () => {
+            setContent('');
+            setMediaFile(null);
+            setMediaPreview(null);
+            setWalrusBlobId('');
+            toast.success('Suit with media posted successfully!');
+          },
+          onError: (error: any) => {
+            toast.error(error?.message || 'Failed to post suit');
+          },
+        }
+      );
     }
   };
 
@@ -76,19 +177,47 @@ export function CreateSuit() {
             </Tabs.Content>
 
             <Tabs.Content value="video">
-              <Box
-                mb="4"
-                p="6"
-                style={{
-                  border: '2px dashed var(--gray-a6)',
-                  borderRadius: '12px',
-                  textAlign: 'center',
-                }}
-              >
-                <Text size="3" style={{ color: 'var(--gray-11)' }}>
-                  Drag & drop .mp4, .mov, .webm (max 200MB)
-                </Text>
-              </Box>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                onChange={handleMediaSelect}
+                className="hidden"
+              />
+              {mediaPreview ? (
+                <Box mb="4" position="relative">
+                  <video
+                    src={mediaPreview}
+                    controls
+                    className="w-full rounded-xl border border-gray-200"
+                    style={{ maxHeight: '400px' }}
+                  />
+                  <Button
+                    variant="soft"
+                    size="1"
+                    onClick={removeMedia}
+                    style={{ position: 'absolute', top: '8px', right: '8px' }}
+                  >
+                    <X size={16} />
+                  </Button>
+                </Box>
+              ) : (
+                <Box
+                  mb="4"
+                  p="6"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    border: '2px dashed var(--gray-a6)',
+                    borderRadius: '12px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Text size="3" style={{ color: 'var(--gray-11)' }}>
+                    {isUploadingMedia ? 'Uploading...' : 'Click to upload or drag & drop .mp4, .mov, .webm (max 5MB)'}
+                  </Text>
+                </Box>
+              )}
               <TextField.Root
                 placeholder="Add a concise title"
                 value={title}
@@ -132,19 +261,47 @@ export function CreateSuit() {
             </Tabs.Content>
 
             <Tabs.Content value="image">
-              <Box
-                mb="4"
-                p="6"
-                style={{
-                  border: '2px dashed var(--gray-a6)',
-                  borderRadius: '12px',
-                  textAlign: 'center',
-                }}
-              >
-                <Text size="3" style={{ color: 'var(--gray-11)' }}>
-                  Drag & drop image files (max 10MB)
-                </Text>
-              </Box>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleMediaSelect}
+                className="hidden"
+              />
+              {mediaPreview ? (
+                <Box mb="4" position="relative">
+                  <img
+                    src={mediaPreview}
+                    alt="Preview"
+                    className="w-full rounded-xl border border-gray-200"
+                    style={{ maxHeight: '400px', objectFit: 'contain' }}
+                  />
+                  <Button
+                    variant="soft"
+                    size="1"
+                    onClick={removeMedia}
+                    style={{ position: 'absolute', top: '8px', right: '8px' }}
+                  >
+                    <X size={16} />
+                  </Button>
+                </Box>
+              ) : (
+                <Box
+                  mb="4"
+                  p="6"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    border: '2px dashed var(--gray-a6)',
+                    borderRadius: '12px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Text size="3" style={{ color: 'var(--gray-11)' }}>
+                    {isUploadingMedia ? 'Uploading...' : 'Click to upload or drag & drop image files (max 5MB)'}
+                  </Text>
+                </Box>
+              )}
               <TextArea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
@@ -166,8 +323,13 @@ export function CreateSuit() {
                 <Button variant="soft" size="2">
                   Schedule
                 </Button>
-                <Button variant="soft" size="2">
-                  Add link
+                <Button
+                  variant="soft"
+                  size="2"
+                  onClick={handleSubmit}
+                  disabled={isUploadingMedia || (!walrusBlobId && !content.trim())}
+                >
+                  {isUploadingMedia ? 'Uploading...' : 'Post Image'}
                 </Button>
               </Flex>
             </Tabs.Content>
@@ -228,6 +390,7 @@ export function CreateSuit() {
             <Button
               size="2"
               onClick={handleSubmit}
+              disabled={isUploadingMedia || !content.trim()}
               style={{ flex: 1, backgroundColor: 'var(--blue-9)' }}
             >
               Post Text

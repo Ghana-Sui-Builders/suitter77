@@ -1,11 +1,13 @@
 import { HeartIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
-import { useLikeSuit, useCommentOnSuit, useRepostSuit, Suit } from '../hooks/useContract';
+import { useLikeSuit, useCommentOnSuit, useCommentOnSuitWithMedia, useRepostSuit, Suit } from '../hooks/useContract';
 import { useComments } from '../hooks/useComments';
 import { useLikeAddedEvents, useRepostAddedEvents } from '../hooks/useEvents';
 import { useCurrentAccount } from '@mysten/dapp-kit';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { WalrusService } from '../services/walrus';
+import { Image } from 'lucide-react';
 
 interface SuitCardProps {
   suit: Suit;
@@ -23,7 +25,12 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
   const [showCommentInput, setShowCommentInput] = useState(defaultShowReply);
   const [showComments, setShowComments] = useState(defaultShowComments);
   const [commentContent, setCommentContent] = useState('');
+  const [commentMediaFile, setCommentMediaFile] = useState<File | null>(null);
+  const [commentMediaPreview, setCommentMediaPreview] = useState<string | null>(null);
+  const [isUploadingCommentMedia, setIsUploadingCommentMedia] = useState(false);
+  const commentFileInputRef = useRef<HTMLInputElement>(null);
   const commentSuit = useCommentOnSuit();
+  const commentSuitWithMedia = useCommentOnSuitWithMedia();
   const { data: comments } = useComments(suit.id);
   const { data: likeEvents } = useLikeAddedEvents(suit.id);
   const { data: repostEvents } = useRepostAddedEvents(suit.id);
@@ -121,31 +128,98 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
     });
   };
 
-  const handleComment = () => {
-    if (commentContent.trim()) {
-      const toastId = toast.loading('Posting comment...');
-      commentSuit.mutate(
-        { suitId: suit.id, content: commentContent },
-        {
-          onSuccess: () => {
-            setCommentContent('');
-            setShowCommentInput(false);
-            // Refresh comments after posting
-            if (!showComments) {
-              setShowComments(true);
-            }
-            toast.dismiss(toastId);
-            toast.success('Comment posted! 💬');
-          },
-          onError: (error: any) => {
-            toast.dismiss(toastId);
-            const errorMessage = error?.message || error?.toString() || 'Failed to post comment. Please try again.';
-            toast.error(errorMessage);
-          },
-        }
-      );
-    } else {
-      toast.error('Please enter a comment before posting.');
+  const handleComment = async () => {
+    if (!commentContent.trim() && !commentMediaFile) {
+      toast.error('Please enter a comment or add media before posting.');
+      return;
+    }
+
+    const toastId = toast.loading('Posting comment...');
+
+    try {
+      // If there's media, upload it first
+      if (commentMediaFile) {
+        setIsUploadingCommentMedia(true);
+        const walrusBlob = await WalrusService.uploadFile(commentMediaFile, account?.address);
+        
+        // Post comment with media
+        commentSuitWithMedia.mutate(
+          { suitId: suit.id, content: commentContent.trim() || '', walrusBlobId: walrusBlob.blobId },
+          {
+            onSuccess: () => {
+              setCommentContent('');
+              setCommentMediaFile(null);
+              setCommentMediaPreview(null);
+              setShowCommentInput(false);
+              setIsUploadingCommentMedia(false);
+              if (!showComments) {
+                setShowComments(true);
+              }
+              toast.dismiss(toastId);
+              toast.success('Comment with media posted! 💬');
+            },
+            onError: (error: any) => {
+              setIsUploadingCommentMedia(false);
+              toast.dismiss(toastId);
+              const errorMessage = error?.message || error?.toString() || 'Failed to post comment. Please try again.';
+              toast.error(errorMessage);
+            },
+          }
+        );
+      } else {
+        // Post text-only comment
+        commentSuit.mutate(
+          { suitId: suit.id, content: commentContent.trim() },
+          {
+            onSuccess: () => {
+              setCommentContent('');
+              setShowCommentInput(false);
+              if (!showComments) {
+                setShowComments(true);
+              }
+              toast.dismiss(toastId);
+              toast.success('Comment posted! 💬');
+            },
+            onError: (error: any) => {
+              toast.dismiss(toastId);
+              const errorMessage = error?.message || error?.toString() || 'Failed to post comment. Please try again.';
+              toast.error(errorMessage);
+            },
+          }
+        );
+      }
+    } catch (error: any) {
+      setIsUploadingCommentMedia(false);
+      toast.dismiss(toastId);
+      toast.error(error?.message || 'Failed to upload media. Please try again.');
+    }
+  };
+
+  const handleCommentMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Check file size (max 5MB for Walrus)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File size must be less than 5MB');
+        return;
+      }
+
+      setCommentMediaFile(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCommentMediaPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeCommentMedia = () => {
+    setCommentMediaFile(null);
+    setCommentMediaPreview(null);
+    if (commentFileInputRef.current) {
+      commentFileInputRef.current.value = '';
     }
   };
 
@@ -244,9 +318,15 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
           {suit.walrus_blob_id && (
             <div className="mb-4 rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
               <img
-                src={`https://walrus.sui.io/v1/blobs/${suit.walrus_blob_id}`}
+                src={WalrusService.getBlobUrl(suit.walrus_blob_id)}
                 alt="Suit media"
                 className="w-full max-h-[500px] object-cover"
+                onError={(e) => {
+                  // Fallback if image fails to load
+                  console.error('Failed to load media:', suit.walrus_blob_id);
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
               />
             </div>
           )}
@@ -340,6 +420,20 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
                         <p className="text-[15px] text-gray-800 leading-relaxed">
                           {comment.content}
                         </p>
+                        {comment.walrus_blob_id && (
+                          <div className="mt-3 rounded-lg overflow-hidden border border-gray-200">
+                            <img
+                              src={WalrusService.getBlobUrl(comment.walrus_blob_id)}
+                              alt="Comment media"
+                              className="w-full max-h-[300px] object-cover"
+                              onError={(e) => {
+                                console.error('Failed to load comment media:', comment.walrus_blob_id);
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -362,31 +456,65 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
                   placeholder="Write a comment..."
                   className="w-full min-h-[80px] bg-transparent resize-none focus:outline-none text-[15px] text-gray-800 placeholder-gray-400"
                 />
+                {commentMediaPreview && (
+                  <div className="mt-3 relative rounded-lg overflow-hidden border border-gray-200">
+                    <img
+                      src={commentMediaPreview}
+                      alt="Preview"
+                      className="w-full max-h-[200px] object-cover"
+                    />
+                    <button
+                      onClick={removeCommentMedia}
+                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="flex gap-3 justify-end mt-3">
+              <div className="flex items-center justify-between mt-3">
+                <input
+                  ref={commentFileInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  onChange={handleCommentMediaSelect}
+                  className="hidden"
+                />
                 <button
-                  onClick={() => {
-                    setShowCommentInput(false);
-                    setCommentContent('');
-                  }}
-                  className="px-5 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm active:scale-95"
+                  onClick={() => commentFileInputRef.current?.click()}
+                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  title="Add image or video"
                 >
-                  Cancel
+                  <Image className="w-5 h-5" />
                 </button>
-                <button
-                  onClick={handleComment}
-                  disabled={commentSuit.isPending || !commentContent.trim()}
-                  className="px-5 py-2.5 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md active:scale-95"
-                >
-                  {commentSuit.isPending ? (
-                    <span className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Posting...
-                    </span>
-                  ) : (
-                    'Comment'
-                  )}
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowCommentInput(false);
+                      setCommentContent('');
+                      removeCommentMedia();
+                    }}
+                    className="px-5 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm active:scale-95"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleComment}
+                    disabled={(commentSuit.isPending || commentSuitWithMedia.isPending || isUploadingCommentMedia) || (!commentContent.trim() && !commentMediaFile)}
+                    className="px-5 py-2.5 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md active:scale-95"
+                  >
+                    {(commentSuit.isPending || commentSuitWithMedia.isPending || isUploadingCommentMedia) ? (
+                      <span className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        {isUploadingCommentMedia ? 'Uploading...' : 'Posting...'}
+                      </span>
+                    ) : (
+                      'Comment'
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           )}

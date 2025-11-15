@@ -1,16 +1,11 @@
-# Dependencies - ignore all node_modules directories
+# Dependencies
 **/node_modules/
 node_modules/
 .pnpm-store/
-.pnpm-debug.log
 
 # Build outputs
 **/dist/
 **/dist-ssr/
-**/build/
-dist/
-dist-ssr/
-build/
 
 # Logs
 logs
@@ -24,7 +19,6 @@ lerna-debug.log*
 # Environment variables
 .env
 .env.local
-.env.*.local
 *.local
 
 # Editor directories and files
@@ -37,13 +31,3 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
-
-# OS files
-Thumbs.db
-
-# Sui/Move build artifacts
-seal/
-
-# Frontend specific
-frontend-dApp/Suitter7-dApp/.vite/
-frontend-dApp/Suitter7-dApp/dist/

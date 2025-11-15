@@ -3,7 +3,9 @@ import { useCurrentAccount } from '@mysten/dapp-kit';
 import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { SuitCard } from '../components/SuitCard';
+import { WalrusService } from '../services/walrus';
 import toast from 'react-hot-toast';
+import { Image, X } from 'lucide-react';
 
 export function Home() {
   const account = useCurrentAccount();
@@ -11,6 +13,10 @@ export function Home() {
   const { data: suits, isLoading } = useSuits();
   const createSuit = useCreateSuit();
   const [content, setContent] = useState('');
+  const [walrusBlobId, setWalrusBlobId] = useState<string>('');
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const suitRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   
   // Handle navigation from notifications - scroll to specific suit
@@ -40,14 +46,91 @@ export function Home() {
     }
   }, [location.state, suits]);
 
+  const handleMediaSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 5MB for Walrus)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size must be less than 5MB');
+      return;
+    }
+
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setMediaPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    // Upload to Walrus
+    setIsUploadingMedia(true);
+    const toastId = toast.loading('Uploading to Walrus...');
+    
+    try {
+      const walrusBlob = await WalrusService.uploadFile(file, account?.address);
+      setWalrusBlobId(walrusBlob.blobId);
+      toast.dismiss(toastId);
+      toast.success('Media uploaded successfully!');
+    } catch (error: any) {
+      toast.dismiss(toastId);
+      toast.error(error?.message || 'Failed to upload media. Please try again.');
+      setMediaPreview(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } finally {
+      setIsUploadingMedia(false);
+    }
+  };
+
+  const removeMedia = () => {
+    setMediaPreview(null);
+    setWalrusBlobId('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleCreateSuit = () => {
     if (!account) {
       toast.error('Please connect your wallet first');
       return;
     }
 
-    if (content.trim() && content.length <= 280) {
-      const toastId = toast.loading('Posting your Suit...');
+    if (!content.trim() && !walrusBlobId) {
+      toast.error('Please enter some content or add media before posting.');
+      return;
+    }
+
+    if (content.length > 280) {
+      toast.error('Suit content is too long. Maximum 280 characters.');
+      return;
+    }
+
+    const toastId = toast.loading('Posting your Suit...');
+    
+    if (walrusBlobId) {
+      // Post with media
+      createSuit.mutate(
+        { content: content.trim() || '', walrusBlobId },
+        {
+          onSuccess: () => {
+            setContent('');
+            setMediaPreview(null);
+            setWalrusBlobId('');
+            toast.dismiss(toastId);
+            toast.success('Suit posted successfully! 🎉');
+          },
+          onError: (error: any) => {
+            toast.dismiss(toastId);
+            const errorMessage = error?.message || error?.toString() || 'Failed to post Suit. Please try again.';
+            toast.error(errorMessage);
+          },
+        }
+      );
+    } else {
+      // Post text only
       createSuit.mutate(
         { content: content.trim() },
         {
@@ -63,10 +146,6 @@ export function Home() {
           },
         }
       );
-    } else if (content.length > 280) {
-      toast.error('Suit content is too long. Maximum 280 characters.');
-    } else {
-      toast.error('Please enter some content before posting.');
     }
   };
 
@@ -88,19 +167,60 @@ export function Home() {
               className="w-full min-h-[100px] resize-none border-none outline-none text-gray-800 placeholder-gray-400 text-[15px] leading-relaxed bg-transparent"
               style={{ fontFamily: 'inherit' }}
             />
+            {mediaPreview && (
+              <div className="mt-3 relative rounded-xl overflow-hidden border border-gray-200">
+                <img
+                  src={mediaPreview}
+                  alt="Preview"
+                  className="w-full max-h-[300px] object-cover"
+                />
+                <button
+                  onClick={removeMedia}
+                  className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-              <span className={`text-xs font-medium ${content.length > 280 ? 'text-red-500' : 'text-gray-400'}`}>
-                {content.length} / 280
-              </span>
+              <div className="flex items-center gap-3">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  onChange={handleMediaSelect}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingMedia}
+                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                  title="Add image or video"
+                >
+                  <Image className="w-5 h-5" />
+                </button>
+                <span className={`text-xs font-medium ${content.length > 280 ? 'text-red-500' : 'text-gray-400'}`}>
+                  {content.length} / 280
+                </span>
+              </div>
               <button
                 onClick={handleCreateSuit}
-                disabled={!content.trim() || content.length > 280 || createSuit.isPending}
+                disabled={(!content.trim() && !walrusBlobId) || content.length > 280 || createSuit.isPending || isUploadingMedia}
                 className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 text-sm font-semibold"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-                </svg>
-                Post Suit
+                {isUploadingMedia ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                    </svg>
+                    Post Suit
+                  </>
+                )}
               </button>
             </div>
           </div>

@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import toast from 'react-hot-toast';
 import { Upload, X } from 'lucide-react';
+import { WalrusService } from '../services/walrus';
 
 interface EditProfileModalProps {
   open: boolean;
@@ -38,6 +39,7 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
     imagePreview: '' as string | null,
     walrusBlobId: '' as string | null,
   });
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -46,7 +48,7 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
         bio: profile.bio || '',
         website: metadata.website || '',
         location: metadata.location || '',
-        imagePreview: profile.profile_image_blob_id ? `https://walrus.blob.storage/${profile.profile_image_blob_id}` : null,
+        imagePreview: profile.profile_image_blob_id ? WalrusService.getBlobUrl(profile.profile_image_blob_id) : null,
         walrusBlobId: profile.profile_image_blob_id || null,
       });
     }
@@ -62,7 +64,7 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
       return;
     }
 
-    // Validate file size (max 5MB)
+    // Validate file size (max 5MB for Walrus)
     if (file.size > 5 * 1024 * 1024) {
       toast.error('Image size must be less than 5MB');
       return;
@@ -78,13 +80,32 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
     };
     reader.readAsDataURL(file);
 
-    // TODO: Upload to Walrus blob storage and get blob ID
-    // For now, we'll accept manual blob ID entry or store the file temporarily
-    toast.loading('Uploading image... Please enter the Walrus blob ID manually if automatic upload fails.');
+    // Upload to Walrus blob storage
+    setIsUploadingImage(true);
+    const toastId = toast.loading('Uploading image to Walrus...');
     
-    // Note: In production, you would upload to Walrus here
-    // const blobId = await uploadToWalrus(file);
-    // setFormData(prev => ({ ...prev, walrusBlobId: blobId }));
+    try {
+      const walrusBlob = await WalrusService.uploadFile(file, account?.address);
+      setFormData((prev) => ({
+        ...prev,
+        walrusBlobId: walrusBlob.blobId,
+      }));
+      toast.dismiss(toastId);
+      toast.success('Image uploaded successfully!');
+    } catch (error: any) {
+      toast.dismiss(toastId);
+      toast.error(error?.message || 'Failed to upload image. Please try again.');
+      // Reset preview on error
+      setFormData((prev) => ({
+        ...prev,
+        imagePreview: null,
+      }));
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } finally {
+      setIsUploadingImage(false);
+    }
   };
 
   const handleRemoveImage = () => {
@@ -170,7 +191,7 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
         bio: profile.bio || '',
         website: metadata.website || '',
         location: metadata.location || '',
-        imagePreview: profile.profile_image_blob_id ? `https://walrus.blob.storage/${profile.profile_image_blob_id}` : null,
+        imagePreview: profile.profile_image_blob_id ? WalrusService.getBlobUrl(profile.profile_image_blob_id) : null,
         walrusBlobId: profile.profile_image_blob_id || null,
       });
     }
@@ -182,7 +203,7 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
     setFormData((prev) => ({
       ...prev,
       walrusBlobId: blobId || null,
-      imagePreview: blobId ? `https://walrus.blob.storage/${blobId}` : prev.imagePreview,
+      imagePreview: blobId ? WalrusService.getBlobUrl(blobId) : prev.imagePreview,
     }));
   };
 
