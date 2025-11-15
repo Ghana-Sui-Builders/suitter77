@@ -17,6 +17,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    host: '0.0.0.0',
+    port: process.env.PORT || 5173,
+    allowedHosts: [
+      'suitter7.onrender.com',
+      '.onrender.com' // This allows all onrender.com subdomains
+    ]
+  },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
