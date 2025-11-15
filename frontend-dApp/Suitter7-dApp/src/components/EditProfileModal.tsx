@@ -30,6 +30,7 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
   const updateProfileImage = useUpdateProfileImage();
   const { metadata, updateMetadata } = useProfileMetadata(account?.address);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isSubmittingRef = useRef(false); // Use ref to prevent double submission in StrictMode
   
   const [formData, setFormData] = useState({
     displayName: '',
@@ -40,6 +41,7 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
     walrusBlobId: '' as string | null,
   });
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -52,7 +54,12 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
         walrusBlobId: profile.profile_image_blob_id || null,
       });
     }
-  }, [profile, metadata]);
+    // Reset submitting state when modal opens/closes
+    if (!open) {
+      setIsSubmitting(false);
+      isSubmittingRef.current = false;
+    }
+  }, [profile, metadata, open]);
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -121,7 +128,20 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     
+    // Atomic check and set - prevent double submission (critical for StrictMode)
+    if (isSubmittingRef.current) {
+      console.log('Submission blocked - already in progress (ref check)');
+      return;
+    }
+    
+    // Additional checks
+    if (isSubmitting || updateProfile.isPending || updateProfileImage.isPending) {
+      console.log('Submission blocked - already in progress (state check)');
+      return;
+    }
+
     if (!profile) {
       toast.error('Profile not found. Please create a profile first.');
       onOpenChange(false);
@@ -133,6 +153,11 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
       return;
     }
 
+    // Atomic set - must be done before any async operations
+    // This happens synchronously, so no race condition between check and set
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    
     const toastId = toast.loading('Updating profile...');
     const updates: Promise<any>[] = [];
 
@@ -175,11 +200,15 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
       await Promise.all(updates);
       toast.dismiss(toastId);
       toast.success('Profile updated successfully! 🎉');
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       onOpenChange(false);
     } catch (error: any) {
       toast.dismiss(toastId);
       const errorMessage = error?.message || error?.toString() || 'Failed to update profile. Please try again.';
       toast.error(errorMessage);
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -357,9 +386,9 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
             </Button>
             <Button 
               type="submit" 
-              disabled={updateProfile.isPending || updateProfileImage.isPending || !formData.bio.trim()}
+              disabled={isSubmittingRef.current || isSubmitting || updateProfile.isPending || updateProfileImage.isPending || !formData.bio.trim()}
             >
-              {(updateProfile.isPending || updateProfileImage.isPending) ? 'Saving...' : 'Save Changes'}
+              {(isSubmitting || updateProfile.isPending || updateProfileImage.isPending) ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </form>

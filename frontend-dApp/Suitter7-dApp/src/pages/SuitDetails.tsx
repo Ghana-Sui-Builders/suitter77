@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { HeartIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
 import toast from 'react-hot-toast';
+import { getUserDisplayName, getUserHandle, getUserAvatarInitial, getUserProfileImageUrl } from '../utils/userDisplay';
 
 export function SuitDetails() {
   const { id } = useParams<{ id: string }>();
@@ -152,11 +153,10 @@ export function SuitDetails() {
     });
   };
 
-  const displayName = authorProfile?.username || `User${suit?.author.slice(2, 6) || ''}`;
-  const handle = `@${suit?.author.slice(0, 4) || ''}${suit?.author.slice(-4) || ''}`;
-  const authorAvatar = authorProfile?.profile_image_blob_id
-    ? `https://walrus.sui.io/v1/blobs/${authorProfile.profile_image_blob_id}`
-    : undefined;
+  const displayName = getUserDisplayName(suit?.author || null, authorProfile || undefined);
+  const handle = getUserHandle(suit?.author || null, authorProfile || undefined);
+  const avatarInitial = getUserAvatarInitial(suit?.author || null, authorProfile || undefined);
+  const authorAvatar = getUserProfileImageUrl(authorProfile || undefined) || undefined;
 
   if (isLoadingSuit) {
     return (
@@ -204,16 +204,27 @@ export function SuitDetails() {
         <div className="flex gap-4">
           {/* Avatar */}
           <div className="relative flex-shrink-0">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md overflow-hidden">
               {authorAvatar ? (
                 <img 
                   src={authorAvatar} 
                   alt={displayName} 
                   className="w-full h-full rounded-full object-cover" 
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent) {
+                      const fallback = document.createElement('span');
+                      fallback.className = 'text-white font-semibold text-lg';
+                      fallback.textContent = avatarInitial;
+                      parent.appendChild(fallback);
+                    }
+                  }}
                 />
               ) : (
                 <span className="text-white font-semibold text-lg">
-                  {displayName[0]?.toUpperCase() || 'U'}
+                  {avatarInitial}
                 </span>
               )}
             </div>
@@ -337,29 +348,68 @@ export function SuitDetails() {
         ) : comments && comments.length > 0 ? (
           <div className="space-y-4">
             {comments.map((comment) => {
-              const commentDisplayName = `User${comment.author.slice(2, 6)}`;
-              const commentHandle = `@${comment.author.slice(0, 4)}${comment.author.slice(-4)}`;
+              const CommentAuthor = ({ authorAddress, comment: commentData }: { authorAddress: string; comment: typeof comment }) => {
+                const { data: commentAuthorProfile } = useProfile(authorAddress);
+                const commentDisplayName = getUserDisplayName(authorAddress, commentAuthorProfile || undefined);
+                const commentHandle = getUserHandle(authorAddress, commentAuthorProfile || undefined);
+                const commentAvatarInitial = getUserAvatarInitial(authorAddress, commentAuthorProfile || undefined);
+                const commentProfileImageUrl = getUserProfileImageUrl(commentAuthorProfile || undefined);
 
-              return (
-                <div key={comment.id} className="bg-white rounded-xl border border-gray-100 p-4">
-                  <div className="flex gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-                      <span className="text-white font-semibold text-sm">
-                        {commentDisplayName[0]?.toUpperCase() || 'U'}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-bold text-gray-900 text-sm">{commentDisplayName}</span>
-                        <span className="text-gray-500 text-xs">{commentHandle}</span>
-                        <span className="text-gray-400 text-xs">•</span>
-                        <span className="text-gray-500 text-xs">{formatTime(comment.timestamp_ms)}</span>
+                return (
+                  <div className="bg-white rounded-xl border border-gray-100 p-4">
+                    <div className="flex gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        {commentProfileImageUrl ? (
+                          <img 
+                            src={commentProfileImageUrl} 
+                            alt={commentDisplayName} 
+                            className="w-full h-full rounded-full object-cover" 
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const parent = target.parentElement;
+                              if (parent) {
+                                const fallback = document.createElement('span');
+                                fallback.className = 'text-white font-semibold text-sm';
+                                fallback.textContent = commentAvatarInitial;
+                                parent.appendChild(fallback);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="text-white font-semibold text-sm">
+                            {commentAvatarInitial}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-gray-700 text-sm leading-relaxed">{comment.content}</p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-bold text-gray-900 text-sm">{commentDisplayName}</span>
+                          <span className="text-gray-500 text-xs">{commentHandle}</span>
+                          <span className="text-gray-400 text-xs">•</span>
+                          <span className="text-gray-500 text-xs">{formatTime(commentData.timestamp_ms)}</span>
+                        </div>
+                        <p className="text-gray-700 text-sm leading-relaxed">{commentData.content}</p>
+                        {commentData.walrus_blob_id && (
+                          <div className="mt-3 rounded-lg overflow-hidden border border-gray-200">
+                            <img
+                              src={`https://walrus.sui.io/v1/blobs/${commentData.walrus_blob_id}`}
+                              alt="Comment media"
+                              className="w-full max-h-[300px] object-cover"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
+                );
+              };
+
+              return <CommentAuthor key={comment.id} authorAddress={comment.author} comment={comment} />;
             })}
           </div>
         ) : (

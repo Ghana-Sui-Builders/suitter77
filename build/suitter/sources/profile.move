@@ -180,6 +180,7 @@ module suitter::profile {
 
         assert!(follower == follower_profile.owner, ENotProfileOwner);
         assert!(follower != followee, ECannotFollowSelf);
+        assert!(followee == followee_profile.owner, ENotProfileOwner); // Ensure followee_profile belongs to followee
 
         if (!table::contains(&follow_registry.user_following, follower)) {
             table::add(&mut follow_registry.user_following, follower, table::new(ctx));

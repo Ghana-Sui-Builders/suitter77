@@ -1,5 +1,5 @@
 import { useCurrentAccount } from '@mysten/dapp-kit';
-import { useSuits, useCreateSuit, useCreateProfile } from '../hooks/useContract';
+import { useSuits, useCreateSuit, useCreateProfile, useRepostsByUser } from '../hooks/useContract';
 import { useAutoCreateProfile } from '../hooks/useAutoCreateProfile';
 import { useProfileMetadata } from '../hooks/useProfileMetadata';
 import { SuitCard } from '../components/SuitCard';
@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { 
   Copy, 
-  Share2, 
   Edit, 
   Hash, 
   Send,
@@ -24,13 +23,34 @@ export function Profile() {
   const { profile, isLoading: isLoadingProfile } = useAutoCreateProfile();
   const { metadata } = useProfileMetadata(account?.address);
   const { data: suits } = useSuits();
+  const { data: reposts } = useRepostsByUser(account?.address || null);
   const createSuit = useCreateSuit();
   const createProfile = useCreateProfile();
   const [activeTab, setActiveTab] = useState<'suits' | 'replies' | 'media' | 'likes'>('suits');
   const [content, setContent] = useState('');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  const userSuits = suits?.filter((suit) => suit.author === account?.address) || [];
+  // Combine original suits and reposted suits
+  const userSuits = useMemo(() => {
+    const originalSuits = suits?.filter((suit) => suit.author === account?.address) || [];
+    const repostedSuits = reposts?.map((repost) => ({
+      ...repost.suit,
+      // Use repost timestamp for sorting reposts (so they appear when reposted, not when originally created)
+      displayTimestamp: repost.repost_timestamp_ms,
+      isRepost: true,
+    })) || [];
+    
+    // Mark original suits
+    const markedOriginalSuits = originalSuits.map(suit => ({
+      ...suit,
+      displayTimestamp: suit.timestamp_ms,
+      isRepost: false,
+    }));
+    
+    // Combine and sort by display timestamp (newest first)
+    const allSuits = [...markedOriginalSuits, ...repostedSuits];
+    return allSuits.sort((a, b) => b.displayTimestamp - a.displayTimestamp);
+  }, [suits, reposts, account?.address]);
   
   // For replies, we'd need to query comments by user - for now showing placeholder
   const userReplies = useMemo(() => {
@@ -157,7 +177,11 @@ export function Profile() {
           <p className="text-muted-foreground mb-6">
             You need to create a profile to start using Suitter. This will only take a moment!
           </p>
-          <Button onClick={handleCreateProfile} disabled={createProfile.isPending}>
+          <Button 
+            onClick={handleCreateProfile} 
+            disabled={createProfile.isPending}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
             {createProfile.isPending ? 'Creating Profile...' : 'Create Profile'}
           </Button>
         </div>
@@ -227,16 +251,10 @@ export function Profile() {
                     Copy Profile Link
                   </Button>
                   <Button
-                    variant="outline"
-                    size="sm"
-                  >
-                    <Share2 className="w-4 h-4 mr-2" />
-                    Share
-                  </Button>
-                  <Button
                     size="sm"
                     onClick={() => setIsEditModalOpen(true)}
                     disabled={!profile}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
                   >
                     <Edit className="w-4 h-4 mr-2" />
                     Edit Profile
@@ -320,6 +338,7 @@ export function Profile() {
                     size="sm"
                     onClick={handleCreateSuit}
                     disabled={!content.trim() || content.length > 280 || createSuit.isPending}
+                    className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
                   >
                     <Send className="w-4 h-4 mr-2" />
                     Post
@@ -336,6 +355,7 @@ export function Profile() {
                   key={suit.id} 
                   suit={suit} 
                   authorUsername={profile?.username}
+                  isRepost={(suit as any).isRepost}
                 />
               ))
             ) : (
@@ -368,6 +388,7 @@ export function Profile() {
                   key={suit.id} 
                   suit={suit} 
                   authorUsername={profile?.username}
+                  isRepost={(suit as any).isRepost}
                 />
               ))
             ) : (
