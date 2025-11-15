@@ -25,7 +25,6 @@ module suitter::interactions {
         author: address,
         content: String,
         timestamp_ms: u64,
-        walrus_blob_id: Option<String>,
     }
 
     public struct Repost has key, store {
@@ -110,38 +109,6 @@ module suitter::interactions {
             author: ctx.sender(),
             content,
             timestamp_ms: clock.timestamp_ms(),
-            walrus_blob_id: option::none(),
-        };
-
-        let comment_id = object::id(&comment);
-        
-        suit::increment_comments(suit);
-        increment_comments(global_registry);
-        emit_comment_added(suit_id, comment_id, ctx.sender());
-
-        transfer::share_object(comment);
-    }
-
-    entry fun comment_on_suit_with_media(
-        global_registry: &mut GlobalRegistry,
-        suit: &mut Suit,
-        content: String,
-        walrus_blob_id: String,
-        clock: &Clock,
-        ctx: &mut TxContext
-    ) {
-        let content_length = content.length();
-        assert!(content_length > 0, ECommentEmpty);
-        assert!(content_length <= MAX_COMMENT_LENGTH, ECommentTooLong);
-
-        let suit_id = object::id(suit);
-        let comment = Comment {
-            id: object::new(ctx),
-            suit_id,
-            author: ctx.sender(),
-            content,
-            timestamp_ms: clock.timestamp_ms(),
-            walrus_blob_id: option::some(walrus_blob_id),
         };
 
         let comment_id = object::id(&comment);
@@ -228,10 +195,6 @@ module suitter::interactions {
 
     public fun comment_timestamp_ms(comment: &Comment): u64 {
         comment.timestamp_ms
-    }
-
-    public fun comment_walrus_blob_id(comment: &Comment): &Option<String> {
-        &comment.walrus_blob_id
     }
 
     public fun has_reposted(
