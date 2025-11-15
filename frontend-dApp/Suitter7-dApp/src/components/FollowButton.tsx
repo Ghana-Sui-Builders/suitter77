@@ -72,6 +72,10 @@ export function FollowButton({ profile, variant = 'default', size = 'sm', classN
       if (isFollowing) {
         // Unfollow
         await new Promise((resolve, reject) => {
+          if (!currentUserProfile.data) {
+            reject(new Error('Profile not found'));
+            return;
+          }
           unfollowUser.mutate(
             {
               unfollowerProfileId: currentUserProfile.data.id,
@@ -88,6 +92,10 @@ export function FollowButton({ profile, variant = 'default', size = 'sm', classN
       } else {
         // Follow
         await new Promise((resolve, reject) => {
+          if (!currentUserProfile.data) {
+            reject(new Error('Profile not found'));
+            return;
+          }
           followUser.mutate(
             {
               followerProfileId: currentUserProfile.data.id,

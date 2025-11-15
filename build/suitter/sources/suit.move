@@ -131,4 +131,77 @@ module suitter::suit {
     public fun walrus_blob_id(suit: &Suit): &Option<String> {
         &suit.walrus_blob_id
     }
+
+    // Create and share a suit (for use by other modules like community)
+    // Returns the suit_id for emitting additional events
+    public fun create_and_share_suit_for_community(
+        registry: &mut GlobalRegistry,
+        content: String,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ): ID {
+        let content_length = content.length();
+        assert!(content_length > 0, EContentEmpty);
+        assert!(content_length <= MAX_CONTENT_LENGTH, EContentTooLong);
+
+        let suit = Suit {
+            id: object::new(ctx),
+            author: ctx.sender(),
+            content,
+            timestamp_ms: clock.timestamp_ms(),
+            likes_count: 0,
+            comments_count: 0,
+            reposts_count: 0,
+            walrus_blob_id: option::none(),
+        };
+
+        let suit_id = object::id(&suit);
+        let timestamp = clock.timestamp_ms();
+        
+        // Register suit in global registry (no media)
+        register_suit(registry, suit_id, ctx.sender(), timestamp, false, ctx);
+        
+        increment_suits(registry);
+        emit_suit_created(suit_id, ctx.sender(), timestamp);
+
+        transfer::share_object(suit);
+        suit_id
+    }
+
+    // Create and share a suit with media (for use by other modules like community)
+    // Returns the suit_id for emitting additional events
+    public fun create_and_share_suit_with_media_for_community(
+        registry: &mut GlobalRegistry,
+        content: String,
+        walrus_blob_id: String,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ): ID {
+        let content_length = content.length();
+        assert!(content_length > 0, EContentEmpty);
+        assert!(content_length <= MAX_CONTENT_LENGTH, EContentTooLong);
+
+        let suit = Suit {
+            id: object::new(ctx),
+            author: ctx.sender(),
+            content,
+            timestamp_ms: clock.timestamp_ms(),
+            likes_count: 0,
+            comments_count: 0,
+            reposts_count: 0,
+            walrus_blob_id: if (walrus_blob_id.length() > 0) option::some(walrus_blob_id) else option::none(),
+        };
+
+        let suit_id = object::id(&suit);
+        let timestamp = clock.timestamp_ms();
+        
+        // Register suit in global registry with media flag
+        register_suit(registry, suit_id, ctx.sender(), timestamp, walrus_blob_id.length() > 0, ctx);
+        
+        increment_suits(registry);
+        emit_suit_created(suit_id, ctx.sender(), timestamp);
+
+        transfer::share_object(suit);
+        suit_id
+    }
 }

@@ -39,8 +39,8 @@ module suitter::interactions {
 
     public struct Mention has key, store {
         id: UID,
-        content_id: ID,  // Can be suit_id or comment_id
-        content_type: u8,  // 0 = suit, 1 = comment
+        content_id: ID,  
+        content_type: u8,  
         mentioned_user: address,
         mentioner: address,
         timestamp_ms: u64,
@@ -58,7 +58,7 @@ module suitter::interactions {
 
     public struct MentionRegistry has key {
         id: UID,
-        content_mentions: Table<ID, Table<address, bool>>,  // content_id -> mentioned_user -> bool
+        content_mentions: Table<ID, Table<address, bool>>,  
     }
 
     fun init(ctx: &mut TxContext) {
@@ -135,7 +135,7 @@ module suitter::interactions {
         };
 
         let comment_id = object::id(&comment);
-        
+
         suit::increment_comments(suit);
         increment_comments(global_registry);
         emit_comment_added(suit_id, comment_id, ctx.sender());
@@ -166,7 +166,7 @@ module suitter::interactions {
         };
 
         let comment_id = object::id(&comment);
-        
+
         suit::increment_comments(suit);
         increment_comments(global_registry);
         emit_comment_added(suit_id, comment_id, ctx.sender());
@@ -201,7 +201,7 @@ module suitter::interactions {
         };
 
         let repost_id = object::id(&repost);
-        
+
         table::add(reposts_table, reposter, true);
         suit::increment_reposts(suit);
         increment_reposts(global_registry);
@@ -284,7 +284,6 @@ module suitter::interactions {
         repost.timestamp_ms
     }
 
-    /// Add a mention to a suit
     entry fun mention_user_in_suit(
         global_registry: &mut GlobalRegistry,
         mention_registry: &mut MentionRegistry,
@@ -296,7 +295,6 @@ module suitter::interactions {
         let suit_id = object::id(suit);
         let mentioner = ctx.sender();
 
-        // Don't allow self-mentions
         assert!(mentioner != mentioned_user, ECannotMentionSelf);
 
         if (!table::contains(&mention_registry.content_mentions, suit_id)) {
@@ -304,34 +302,30 @@ module suitter::interactions {
         };
 
         let mentions_table = table::borrow_mut(&mut mention_registry.content_mentions, suit_id);
-        
-        // Allow multiple mentions of the same user in the same content (different mentioners)
-        // But track if this specific mentioner already mentioned this user in this content
+
         let mention_key = mentioned_user;
-        
+
         let mention = Mention {
             id: object::new(ctx),
             content_id: suit_id,
-            content_type: 0,  // 0 = suit
+            content_type: 0,  
             mentioned_user,
             mentioner,
             timestamp_ms: clock.timestamp_ms(),
         };
 
         let mention_id = object::id(&mention);
-        
-        // Track that this user was mentioned in this content
+
         if (!table::contains(mentions_table, mention_key)) {
             table::add(mentions_table, mention_key, true);
         };
-        
+
         increment_mentions(global_registry);
         emit_mention_added(suit_id, mention_id, mentioner, mentioned_user, 0);
 
         transfer::share_object(mention);
     }
 
-    /// Add a mention to a comment
     entry fun mention_user_in_comment(
         global_registry: &mut GlobalRegistry,
         mention_registry: &mut MentionRegistry,
@@ -343,7 +337,6 @@ module suitter::interactions {
         let comment_id = object::id(comment);
         let mentioner = ctx.sender();
 
-        // Don't allow self-mentions
         assert!(mentioner != mentioned_user, ECannotMentionSelf);
 
         if (!table::contains(&mention_registry.content_mentions, comment_id)) {
@@ -352,30 +345,28 @@ module suitter::interactions {
 
         let mentions_table = table::borrow_mut(&mut mention_registry.content_mentions, comment_id);
         let mention_key = mentioned_user;
-        
+
         let mention = Mention {
             id: object::new(ctx),
             content_id: comment_id,
-            content_type: 1,  // 1 = comment
+            content_type: 1,  
             mentioned_user,
             mentioner,
             timestamp_ms: clock.timestamp_ms(),
         };
 
         let mention_id = object::id(&mention);
-        
-        // Track that this user was mentioned in this content
+
         if (!table::contains(mentions_table, mention_key)) {
             table::add(mentions_table, mention_key, true);
         };
-        
+
         increment_mentions(global_registry);
         emit_mention_added(comment_id, mention_id, mentioner, mentioned_user, 1);
 
         transfer::share_object(mention);
     }
 
-    /// Check if a user was mentioned in a suit or comment
     public fun has_mentioned(
         mention_registry: &MentionRegistry,
         content_id: ID,
@@ -389,7 +380,6 @@ module suitter::interactions {
         table::contains(mentions_table, mentioned_user)
     }
 
-    /// Get mention details
     public fun mention_content_id(mention: &Mention): ID {
         mention.content_id
     }

@@ -24,6 +24,7 @@ module suitter::suitter {
         total_reposts: u64,
         total_mentions: u64,
         total_messages: u64,
+        total_communities: u64,
         /// Table storing all posts (suits) by suit_id
         posts: Table<ID, SuitInfo>,
         /// Table storing suit IDs by author address for quick lookups
@@ -92,6 +93,21 @@ module suitter::suitter {
         timestamp_ms: u64,
     }
 
+    public struct CommunityCreated has copy, drop {
+        community_id: ID,
+        creator: address,
+        name: String,
+        handle: String,
+        timestamp_ms: u64,
+    }
+
+    public struct CommunityPostCreated has copy, drop {
+        community_id: ID,
+        suit_id: ID,
+        author: address,
+        timestamp_ms: u64,
+    }
+
     fun init(ctx: &mut TxContext) {
         let admin_cap = AdminCap {
             id: object::new(ctx),
@@ -106,6 +122,7 @@ module suitter::suitter {
             total_reposts: 0,
             total_mentions: 0,
             total_messages: 0,
+            total_communities: 0,
             posts: table::new(ctx),
             author_suits: table::new(ctx),
         };
@@ -140,6 +157,10 @@ module suitter::suitter {
 
     public fun increment_messages(registry: &mut GlobalRegistry) {
         registry.total_messages = registry.total_messages + 1;
+    }
+
+    public fun increment_communities(registry: &mut GlobalRegistry) {
+        registry.total_communities = registry.total_communities + 1;
     }
 
     /// Register a new suit in the global registry
@@ -280,5 +301,13 @@ module suitter::suitter {
 
     public fun emit_message_sent(conversation_id: ID, sender: address, receiver: address, timestamp_ms: u64) {
         event::emit(MessageSent { conversation_id, sender, receiver, timestamp_ms });
+    }
+
+    public fun emit_community_created(community_id: ID, creator: address, name: String, handle: String, timestamp_ms: u64) {
+        event::emit(CommunityCreated { community_id, creator, name, handle, timestamp_ms });
+    }
+
+    public fun emit_community_post_created(community_id: ID, suit_id: ID, author: address, timestamp_ms: u64) {
+        event::emit(CommunityPostCreated { community_id, suit_id, author, timestamp_ms });
     }
 }

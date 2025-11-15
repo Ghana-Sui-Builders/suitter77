@@ -83,7 +83,7 @@ module suitter::profile {
         };
 
         let profile_id = object::id(&profile);
-        
+
         table::add(&mut profile_registry.username_to_profile, username, sender);
         table::add(&mut profile_registry.address_to_username, sender, username);
 
@@ -180,7 +180,7 @@ module suitter::profile {
 
         assert!(follower == follower_profile.owner, ENotProfileOwner);
         assert!(follower != followee, ECannotFollowSelf);
-        assert!(followee == followee_profile.owner, ENotProfileOwner); // Ensure followee_profile belongs to followee
+        assert!(followee == followee_profile.owner, ENotProfileOwner); 
 
         if (!table::contains(&follow_registry.user_following, follower)) {
             table::add(&mut follow_registry.user_following, follower, table::new(ctx));

@@ -40,7 +40,7 @@ export function EditProfileModal({ open, onOpenChange, profile }: EditProfileMod
     imagePreview: '' as string | null,
     walrusBlobId: '' as string | null,
   });
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [, setIsUploadingImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {

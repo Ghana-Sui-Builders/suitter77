@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { useCurrentAccount } from '@mysten/dapp-kit';
 import { 
   ArrowLeft, 
   Upload, 
@@ -15,9 +16,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useCreateCommunity } from '../hooks/useContract';
+import { WalrusService } from '../services/walrus';
 
 export function CreateCommunity() {
   const navigate = useNavigate();
+  const account = useCurrentAccount();
+  const createCommunity = useCreateCommunity();
   const [formData, setFormData] = useState({
     name: '',
     handle: '',
@@ -32,6 +37,10 @@ export function CreateCommunity() {
 
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [thumbnailBlobId, setThumbnailBlobId] = useState<string | null>(null);
+  const [coverBlobId, setCoverBlobId] = useState<string | null>(null);
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
 
   const handleInputChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -46,35 +55,87 @@ export function CreateCommunity() {
     }));
   };
 
-  const handleThumbnailUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Thumbnail image must be less than 5MB');
-        return;
-      }
-      setFormData((prev) => ({ ...prev, thumbnail: file }));
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setThumbnailPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Thumbnail image must be less than 5MB');
+      return;
+    }
+
+    setFormData((prev) => ({ ...prev, thumbnail: file }));
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setThumbnailPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    // Upload to Walrus
+    if (!account?.address) {
+      toast.error('Please connect your wallet to upload images');
+      return;
+    }
+
+    setIsUploadingThumbnail(true);
+    const toastId = toast.loading('Uploading thumbnail to Walrus...');
+    
+    try {
+      const walrusBlob = await WalrusService.uploadFile(file, account.address);
+      setThumbnailBlobId(walrusBlob.blobId);
+      toast.dismiss(toastId);
+      toast.success('Thumbnail uploaded successfully!');
+    } catch (error: any) {
+      toast.dismiss(toastId);
+      toast.error(error?.message || 'Failed to upload thumbnail. You can still create the community without it.');
+      setFormData((prev) => ({ ...prev, thumbnail: null }));
+      setThumbnailPreview(null);
+    } finally {
+      setIsUploadingThumbnail(false);
     }
   };
 
-  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('Cover image must be less than 10MB');
-        return;
-      }
-      setFormData((prev) => ({ ...prev, coverImage: file }));
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setCoverPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Cover image must be less than 10MB');
+      return;
+    }
+
+    setFormData((prev) => ({ ...prev, coverImage: file }));
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setCoverPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    // Upload to Walrus
+    if (!account?.address) {
+      toast.error('Please connect your wallet to upload images');
+      return;
+    }
+
+    setIsUploadingCover(true);
+    const toastId = toast.loading('Uploading cover image to Walrus...');
+    
+    try {
+      const walrusBlob = await WalrusService.uploadFile(file, account.address);
+      setCoverBlobId(walrusBlob.blobId);
+      toast.dismiss(toastId);
+      toast.success('Cover image uploaded successfully!');
+    } catch (error: any) {
+      toast.dismiss(toastId);
+      toast.error(error?.message || 'Failed to upload cover image. You can still create the community without it.');
+      setFormData((prev) => ({ ...prev, coverImage: null }));
+      setCoverPreview(null);
+    } finally {
+      setIsUploadingCover(false);
     }
   };
 
@@ -106,8 +167,14 @@ export function CreateCommunity() {
     setFormData((prev) => ({ ...prev, handle: sanitized }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Check wallet connection
+    if (!account?.address) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
 
     // Validation
     if (formData.name.length < 3 || formData.name.length > 40) {
@@ -130,9 +197,62 @@ export function CreateCommunity() {
       return;
     }
 
-    // TODO: Implement actual community creation logic
-    toast.success('Community created successfully! 🎉');
-    navigate('/communities');
+    // Upload images if they haven't been uploaded yet
+    let finalThumbnailBlobId = thumbnailBlobId;
+    let finalCoverBlobId = coverBlobId;
+
+    if (formData.thumbnail && !thumbnailBlobId && !isUploadingThumbnail) {
+      try {
+        const toastId = toast.loading('Uploading thumbnail...');
+        const walrusBlob = await WalrusService.uploadFile(formData.thumbnail, account.address);
+        finalThumbnailBlobId = walrusBlob.blobId;
+        setThumbnailBlobId(walrusBlob.blobId);
+        toast.dismiss(toastId);
+      } catch (error: any) {
+        toast.error(error?.message || 'Failed to upload thumbnail');
+        return;
+      }
+    }
+
+    if (formData.coverImage && !coverBlobId && !isUploadingCover) {
+      try {
+        const toastId = toast.loading('Uploading cover image...');
+        const walrusBlob = await WalrusService.uploadFile(formData.coverImage, account.address);
+        finalCoverBlobId = walrusBlob.blobId;
+        setCoverBlobId(walrusBlob.blobId);
+        toast.dismiss(toastId);
+      } catch (error: any) {
+        toast.error(error?.message || 'Failed to upload cover image');
+        return;
+      }
+    }
+
+    // Create the community
+    createCommunity.mutate(
+      {
+        name: formData.name.trim(),
+        handle: formData.handle.trim(),
+        description: formData.description.trim(),
+        privacy: formData.privacy,
+        thumbnailBlobId: finalThumbnailBlobId || undefined,
+        coverBlobId: finalCoverBlobId || undefined,
+      },
+      {
+        onSuccess: () => {
+          toast.success('Community created successfully! 🎉');
+          navigate('/communities');
+        },
+        onError: (error: any) => {
+          console.error('Error creating community:', error);
+          const errorMessage = error?.message || 'Failed to create community';
+          if (errorMessage.includes('module not found') || errorMessage.includes('Community module')) {
+            toast.error('Community contract not deployed yet. Please deploy the community module first.');
+          } else {
+            toast.error(errorMessage);
+          }
+        },
+      }
+    );
   };
 
   const categories = ['Development', 'Gaming', 'Business', 'Security'];
@@ -376,9 +496,12 @@ export function CreateCommunity() {
               <X className="size-4" />
               Cancel
             </Button>
-            <Button type="submit">
+            <Button 
+              type="submit" 
+              disabled={createCommunity.isPending || isUploadingThumbnail || isUploadingCover}
+            >
               <Check className="size-4" />
-              Create Community
+              {createCommunity.isPending ? 'Creating...' : 'Create Community'}
             </Button>
           </div>
         </form>

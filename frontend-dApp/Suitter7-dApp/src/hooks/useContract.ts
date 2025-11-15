@@ -3,14 +3,15 @@ import { Transaction } from '@mysten/sui/transactions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 // Contract package ID - should be set after deployment
-const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0x2039f72d58be7166b210e54145ecff010ea50ddca6043db743ea8a25e7542d39';
-const GLOBAL_REGISTRY_ID = import.meta.env.VITE_GLOBAL_REGISTRY_ID || '0xbba109acd74facb5ac5219dd0685c08dd0a49894ab968f3788b1e5130f37596e';
-const PROFILE_REGISTRY_ID = import.meta.env.VITE_PROFILE_REGISTRY_ID || '0x5e34d722ad42643d57384069050e3520546b7dbb14f9fe3c458dec1d2fd02405';
-const LIKE_REGISTRY_ID = import.meta.env.VITE_LIKE_REGISTRY_ID || '0x58a25d466a6d17ce7dcefb4a674aef40cf5ab6637a5132f8a85bd34ed8674160';
-const REPOST_REGISTRY_ID = import.meta.env.VITE_REPOST_REGISTRY_ID || '0x0efb9245d856896cf171b41dbb9df716a3d6e1de123b68da8065319691b6742d';
-const MENTION_REGISTRY_ID = import.meta.env.VITE_MENTION_REGISTRY_ID || '0x88a2911a79b507d14ebe1285b8992f2f820836facea5f8ecd5bc32f6ca5b9ab1';
-const FOLLOW_REGISTRY_ID = import.meta.env.VITE_FOLLOW_REGISTRY_ID || '0x8f52804c50e672b6dce6273da1f0472a5992a660c738fa60ab581492a1086605';
-const CONVERSATION_REGISTRY_ID = import.meta.env.VITE_CONVERSATION_REGISTRY_ID || '0x2f1b3ed420bf9b8f5b1e71ed6f3dbe3340c75864d808a1cd7250ae3e86c0bc80';
+const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0x4d105e317fae9c83ea97d317b02a8e29d3bffe563a4c5ef76584c15a2cfc26ea';
+const GLOBAL_REGISTRY_ID = import.meta.env.VITE_GLOBAL_REGISTRY_ID || '0x3f9d688b242a46547d3eb6ebfc2e8d5d5384c4bb0cce858bd235a113d08df8af';
+const PROFILE_REGISTRY_ID = import.meta.env.VITE_PROFILE_REGISTRY_ID || '0xce633d2dd87c92dbe9060d33783c3ba2ffce4a571f6294cd793b5b40e7817e35';
+const LIKE_REGISTRY_ID = import.meta.env.VITE_LIKE_REGISTRY_ID || '0xfc0f46c69176082eb217266462133517927e252b2e5e39db80ab4d7e39e0b95c';
+const REPOST_REGISTRY_ID = import.meta.env.VITE_REPOST_REGISTRY_ID || '0x07cf02f7758dcbc87ceb7cb65742406a15fd6c3426e83e5a59f78ac977cf4bd3';
+const MENTION_REGISTRY_ID = import.meta.env.VITE_MENTION_REGISTRY_ID || '0xe6ee869f196d50db424ad5df60a5eacfe4af376b92335a1840b65405c19c5f87';
+const FOLLOW_REGISTRY_ID = import.meta.env.VITE_FOLLOW_REGISTRY_ID || '0xe6ff988467c7232a43352e21c0f993ba485efbb06d26e40fe52d52253d675fcf';
+const CONVERSATION_REGISTRY_ID = import.meta.env.VITE_CONVERSATION_REGISTRY_ID || '0x95efd718dd46ec7e4f38475d0d64a911034b303e5ded5c37e72bd6fae066abd1';
+const COMMUNITY_REGISTRY_ID = import.meta.env.VITE_COMMUNITY_REGISTRY_ID || '0x3b9c1325bca405b447a88e83b9bcc9603e3a2f1b0d7d70dcc1b93043522c989d';
 
 // Helper function to extract Option<String> from Sui object
 // Option<String> can be stored in various formats:
@@ -110,6 +111,19 @@ export interface Mention {
   mentioned_user: string;
   mentioner: string;
   timestamp_ms: number;
+}
+
+export interface Community {
+  id: string;
+  name: string;
+  handle: string;
+  description: string;
+  creator: string;
+  privacy: 'public' | 'members';
+  members_count: number;
+  thumbnail_blob_id?: string;
+  cover_blob_id?: string;
+  created_at_ms: number;
 }
 
 // Hook to get all Suits
@@ -688,25 +702,53 @@ export function useCreateProfile() {
   return useMutation({
     mutationFn: async ({ username, bio }: { username: string; bio: string }) => {
       return new Promise((resolve, reject) => {
-        const tx = new Transaction();
-        tx.moveCall({
-          target: `${PACKAGE_ID}::profile::create_profile`,
-          arguments: [
-            tx.object(GLOBAL_REGISTRY_ID),
-            tx.object(PROFILE_REGISTRY_ID),
-            tx.pure.string(username),
-            tx.pure.string(bio),
-            tx.object('0x6'), // Clock object
-          ],
-        });
+        try {
+          const tx = new Transaction();
+          
+          // Use inline arguments (same pattern as create_community which works)
+          // This matches the exact pattern used in create_community
+          tx.moveCall({
+            target: `${PACKAGE_ID}::profile::create_profile`,
+            arguments: [
+              tx.object(GLOBAL_REGISTRY_ID),
+              tx.object(PROFILE_REGISTRY_ID),
+              tx.pure.string(username),
+              tx.pure.string(bio),
+              tx.object('0x6'), // Clock object
+            ],
+          });
 
-        signAndExecute(
-          { transaction: tx },
-          {
-            onSuccess: resolve,
-            onError: reject,
-          }
-        );
+          signAndExecute(
+            { transaction: tx },
+            {
+              onSuccess: (result) => {
+                resolve(result);
+              },
+              onError: (error: any) => {
+                console.error('Profile creation error:', error);
+                console.error('Error details:', JSON.stringify(error, null, 2));
+                console.error('PACKAGE_ID:', PACKAGE_ID);
+                console.error('GLOBAL_REGISTRY_ID:', GLOBAL_REGISTRY_ID);
+                console.error('PROFILE_REGISTRY_ID:', PROFILE_REGISTRY_ID);
+                console.error('Username:', username);
+                console.error('Bio:', bio);
+                
+                // Check if it's the specific InvalidValueUsage error
+                const errorStr = JSON.stringify(error);
+                if (errorStr.includes('InvalidValueUsage') || errorStr.includes('arg_idx: 1')) {
+                  console.error('This appears to be a Transaction API issue with multiple mutable shared objects in SDK 1.45.0');
+                  console.error('The CLI dry run succeeded, so the function signature is correct.');
+                  console.error('This might be a known issue with Sui SDK 1.45.0 Transaction API.');
+                }
+                
+                reject(error);
+              },
+            }
+          );
+        } catch (error) {
+          console.error('Transaction construction error:', error);
+          reject(error);
+        }
       });
     },
     onSuccess: () => {
@@ -1400,6 +1442,628 @@ export function useRepostsByUser(userAddress: string | null) {
   });
 }
 
+// Hook to create a Community
+export function useCreateCommunity() {
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ 
+      name, 
+      handle, 
+      description, 
+      privacy, 
+      thumbnailBlobId, 
+      coverBlobId 
+    }: { 
+      name: string; 
+      handle: string; 
+      description: string; 
+      privacy: 'public' | 'members';
+      thumbnailBlobId?: string;
+      coverBlobId?: string;
+    }) => {
+      return new Promise((resolve, reject) => {
+        const tx = new Transaction();
+        
+        // Convert privacy to u8: 0 = public, 1 = members
+        const privacyValue = privacy === 'public' ? 0 : 1;
+
+        // Try to call create_community function
+        // If the function doesn't exist, it will fail gracefully
+        try {
+          if (thumbnailBlobId || coverBlobId) {
+            // Create community with media
+            tx.moveCall({
+              target: `${PACKAGE_ID}::community::create_community_with_media`,
+              arguments: [
+                tx.object(GLOBAL_REGISTRY_ID),
+                tx.object(COMMUNITY_REGISTRY_ID),
+                tx.pure.string(name),
+                tx.pure.string(handle),
+                tx.pure.string(description),
+                tx.pure.u8(privacyValue),
+                tx.pure.string(thumbnailBlobId || ''),
+                tx.pure.string(coverBlobId || ''),
+                tx.object('0x6'), // Clock object
+              ],
+            });
+          } else {
+            // Create community without media
+            tx.moveCall({
+              target: `${PACKAGE_ID}::community::create_community`,
+              arguments: [
+                tx.object(GLOBAL_REGISTRY_ID),
+                tx.object(COMMUNITY_REGISTRY_ID),
+                tx.pure.string(name),
+                tx.pure.string(handle),
+                tx.pure.string(description),
+                tx.pure.u8(privacyValue),
+                tx.object('0x6'), // Clock object
+              ],
+            });
+          }
+        } catch (error) {
+          // If the module doesn't exist, provide a helpful error
+          reject(new Error('Community module not found. Please ensure the community contract is deployed.'));
+          return;
+        }
+
+        signAndExecute(
+          { transaction: tx },
+          {
+            onSuccess: (result) => {
+              resolve(result);
+            },
+            onError: (error) => {
+              reject(error);
+            },
+          }
+        );
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+    },
+  });
+}
+
+// Hook to get all Communities
+export function useCommunities() {
+  const suiClient = useSuiClient();
+
+  return useQuery({
+    queryKey: ['communities'],
+    queryFn: async () => {
+      try {
+        console.log('Fetching communities with PACKAGE_ID:', PACKAGE_ID);
+        
+        // Query for CommunityCreated events to find all communities
+
+        // Fallback: Try querying for CommunityCreated events
+        // The event is emitted from suitter module, not community module
+        let events;
+        try {
+          events = await suiClient.queryEvents({
+            query: {
+              MoveEventType: `${PACKAGE_ID}::suitter::CommunityCreated`,
+            },
+            limit: 100,
+            order: 'descending',
+          });
+          console.log('Events found by MoveEventType (suitter::CommunityCreated):', events.data.length);
+        } catch (eventError) {
+          console.warn('Query by MoveEventType (suitter::CommunityCreated) failed, trying MoveModule:', eventError);
+          // Fallback: Try querying by MoveModule
+          try {
+            events = await suiClient.queryEvents({
+              query: {
+                MoveModule: {
+                  package: PACKAGE_ID,
+                  module: 'suitter',
+                },
+              },
+              limit: 100,
+              order: 'descending',
+            });
+            console.log('Events found by MoveModule (suitter):', events.data.length);
+            // Filter for CommunityCreated events only
+            if (events.data.length > 0) {
+              const communityCreatedEvents = events.data.filter((e: any) => 
+                e.type?.includes('CommunityCreated')
+              );
+              console.log('Filtered CommunityCreated events from module query:', communityCreatedEvents.length);
+              events.data = communityCreatedEvents;
+            }
+          } catch (moduleError) {
+            console.warn('Query by MoveModule (suitter) failed:', moduleError);
+            return [];
+          }
+        }
+
+        // If we got events, extract community IDs and fetch objects
+        if (events && events.data.length > 0) {
+          console.log('Raw events:', events.data);
+
+          // Extract community IDs from events
+          const communityIds = events.data
+            .map((event) => {
+              const parsedJson = event.parsedJson as any;
+              let communityId = parsedJson?.community_id || 
+                              parsedJson?.communityId || 
+                              parsedJson?.id;
+              
+              if (typeof communityId === 'object' && communityId !== null) {
+                communityId = communityId.id || communityId.value || communityId;
+              }
+              
+              if (communityId && typeof communityId !== 'string') {
+                communityId = String(communityId);
+              }
+              
+              return communityId;
+            })
+            .filter((id): id is string => !!id && typeof id === 'string' && id.length > 0);
+
+          console.log('Extracted community IDs from events:', communityIds);
+
+          if (communityIds.length === 0) {
+            console.log('No community IDs extracted from events');
+            return [];
+          }
+
+          // Batch fetch all Community objects
+          const objects = await suiClient.multiGetObjects({
+            ids: communityIds,
+            options: {
+              showContent: true,
+              showType: true,
+            },
+          });
+
+          console.log('Fetched community objects from events:', objects.length);
+
+          const communities = objects
+            .map((obj: any, index: number) => {
+              if (!obj.data) {
+                console.warn(`Community object ${communityIds[index]} has no data`);
+                return null;
+              }
+              const content = obj.data.content as any;
+              if (!content || !content.fields) {
+                console.warn(`Community object ${communityIds[index]} has no content fields`);
+                return null;
+              }
+
+              return {
+                id: obj.data.objectId,
+                name: content.fields.name || '',
+                handle: content.fields.handle || '',
+                description: content.fields.description || '',
+                creator: content.fields.creator || '',
+                privacy: (content.fields.privacy === 0 || content.fields.privacy === 'public') ? 'public' : 'members',
+                members_count: Number(content.fields.members_count || 0),
+                thumbnail_blob_id: extractOptionString(content.fields.thumbnail_blob_id, 'thumbnail_blob_id'),
+                cover_blob_id: extractOptionString(content.fields.cover_blob_id, 'cover_blob_id'),
+                created_at_ms: Number(content.fields.created_at_ms || 0),
+              } as Community;
+            })
+              .filter((community: any): community is Community => community !== null)
+              .sort((a: Community, b: Community) => b.created_at_ms - a.created_at_ms);
+
+          console.log('Final communities array from events:', communities);
+          return communities;
+        }
+
+        console.log('No communities found');
+        return [];
+      } catch (error) {
+        console.error('Error fetching communities:', error);
+        return [];
+      }
+    },
+    refetchInterval: 10000, // Refetch every 10 seconds
+    retry: 3, // Retry failed requests
+  });
+}
+
+// Hook to join a community
+export function useJoinCommunity() {
+  const suiClient = useSuiClient();
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ communityId }: { communityId: string; membersId?: string }) => {
+      // Find the CommunityMembers object for this community
+      // We'll query for CommunityCreated events to find the transaction that created this community
+      // Then we'll look for CommunityMembers objects created in that transaction
+      let membersId: string | null = null;
+      
+      try {
+        // First, try to find the transaction that created this community
+        const events = await suiClient.queryEvents({
+          query: {
+            MoveEventType: `${PACKAGE_ID}::suitter::CommunityCreated`,
+          },
+          limit: 100,
+          order: 'descending',
+        });
+
+        // Find the event for this specific community
+        const communityEvent = events.data.find((event: any) => {
+          const parsedJson = event.parsedJson as any;
+          return parsedJson?.community_id === communityId;
+        });
+
+        if (communityEvent) {
+          // Get the transaction that created the community
+          const tx = await suiClient.getTransactionBlock({
+            digest: communityEvent.id.txDigest,
+            options: {
+              showEffects: true,
+              showObjectChanges: true,
+            },
+          });
+
+          // Find the CommunityMembers object created in this transaction
+          if (tx.objectChanges) {
+            const membersObject = tx.objectChanges.find((change: any) => {
+              return change.type === 'created' && 
+                     change.objectType === `${PACKAGE_ID}::community::CommunityMembers`;
+            }) as any;
+            
+            if (membersObject && 'objectId' in membersObject) {
+              membersId = membersObject.objectId;
+            }
+          }
+        }
+
+        // Fallback: Try to find CommunityMembers via events if we couldn't find it via transaction
+        if (!membersId) {
+          // Try to get the community object and find related members
+          try {
+            await suiClient.getObject({
+              id: communityId,
+              options: {
+                showContent: true,
+                showType: true,
+              },
+            });
+            // Note: In a real implementation, you might need to store the members ID in the community
+            // For now, we'll rely on finding it via transaction history
+          } catch (err) {
+            console.warn('Could not fetch community object:', err);
+          }
+        }
+      } catch (error) {
+        console.warn('Could not find CommunityMembers object:', error);
+      }
+
+      return new Promise((resolve, reject) => {
+        const tx = new Transaction();
+        
+        if (!membersId) {
+          reject(new Error('Could not find community members object. The community may need to be recreated with the latest contract version.'));
+          return;
+        }
+
+        tx.moveCall({
+          target: `${PACKAGE_ID}::community::join_community`,
+          arguments: [
+            tx.object(communityId),
+            tx.object(membersId),
+            tx.object('0x6'), // Clock object
+          ],
+        });
+
+        signAndExecute(
+          { transaction: tx },
+          {
+            onSuccess: (result) => {
+              resolve(result);
+            },
+            onError: (error) => {
+              reject(error);
+            },
+          }
+        );
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
+      queryClient.invalidateQueries({ queryKey: ['community'] });
+      queryClient.invalidateQueries({ queryKey: ['is-community-member'] });
+    },
+  });
+}
+
+// Hook to get a specific community
+export function useCommunity(communityId: string | null) {
+  const suiClient = useSuiClient();
+
+  return useQuery({
+    queryKey: ['community', communityId],
+    queryFn: async () => {
+      if (!communityId) return null;
+
+      try {
+        const object = await suiClient.getObject({
+          id: communityId,
+          options: {
+            showContent: true,
+            showType: true,
+          },
+        });
+
+        if (!object.data) return null;
+        const content = object.data.content as any;
+        if (!content || !content.fields) return null;
+
+        return {
+          id: object.data.objectId,
+          name: content.fields.name || '',
+          handle: content.fields.handle || '',
+          description: content.fields.description || '',
+          creator: content.fields.creator || '',
+          privacy: (content.fields.privacy === 0 || content.fields.privacy === 'public') ? 'public' : 'members',
+          members_count: Number(content.fields.members_count || 0),
+          thumbnail_blob_id: extractOptionString(content.fields.thumbnail_blob_id, 'thumbnail_blob_id'),
+          cover_blob_id: extractOptionString(content.fields.cover_blob_id, 'cover_blob_id'),
+          created_at_ms: Number(content.fields.created_at_ms || 0),
+        } as Community;
+      } catch (error) {
+        console.error('Error fetching community:', error);
+        return null;
+      }
+    },
+    enabled: !!communityId,
+  });
+}
+
+// Hook to check if user is a member of a community
+export function useIsCommunityMember(communityId: string | null, userAddress: string | null) {
+  const suiClient = useSuiClient();
+
+  return useQuery({
+    queryKey: ['is-community-member', communityId, userAddress],
+    queryFn: async () => {
+      if (!communityId || !userAddress) return false;
+
+      try {
+        // Query for CommunityMembership objects owned by the user
+        const objects = await suiClient.getOwnedObjects({
+          owner: userAddress,
+          filter: {
+            StructType: `${PACKAGE_ID}::community::CommunityMembership`,
+          },
+          options: {
+            showContent: true,
+            showType: true,
+          },
+        });
+
+        // Check if any membership is for this community
+        return objects.data.some((obj) => {
+          if (!obj.data) return false;
+          const content = obj.data.content as any;
+          if (!content || !content.fields) return false;
+          return content.fields.community_id === communityId;
+        });
+      } catch (error) {
+        console.error('Error checking community membership:', error);
+        return false;
+      }
+    },
+    enabled: !!communityId && !!userAddress,
+    refetchInterval: 10000,
+  });
+}
+
+// Hook to create a post in a community
+export function useCreateCommunityPost() {
+  const suiClient = useSuiClient();
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ 
+      communityId, 
+      membersId, 
+      content, 
+      walrusBlobId 
+    }: { 
+      communityId: string; 
+      membersId?: string; 
+      content: string; 
+      walrusBlobId?: string;
+    }) => {
+      // Find the CommunityMembers object
+      let finalMembersId: string | null = membersId || null;
+      
+      if (!finalMembersId) {
+        try {
+          const events = await suiClient.queryEvents({
+            query: {
+              MoveEventType: `${PACKAGE_ID}::suitter::CommunityCreated`,
+            },
+            limit: 100,
+            order: 'descending',
+          });
+
+          const communityEvent = events.data.find((event: any) => {
+            const parsedJson = event.parsedJson as any;
+            return parsedJson?.community_id === communityId;
+          });
+
+          if (communityEvent) {
+            const tx = await suiClient.getTransactionBlock({
+              digest: communityEvent.id.txDigest,
+              options: {
+                showEffects: true,
+                showObjectChanges: true,
+              },
+            });
+
+            if (tx.objectChanges) {
+              const membersObject = tx.objectChanges.find((change: any) => {
+                return change.type === 'created' && 
+                       change.objectType === `${PACKAGE_ID}::community::CommunityMembers`;
+              }) as any;
+              
+              if (membersObject && 'objectId' in membersObject) {
+                finalMembersId = membersObject.objectId;
+              }
+            }
+          }
+
+          if (!finalMembersId) {
+            // Try to get the community object and find related members
+            try {
+              await suiClient.getObject({
+                id: communityId,
+                options: {
+                  showContent: true,
+                  showType: true,
+                },
+              });
+              // Note: In a real implementation, you might need to store the members ID in the community
+              // For now, we'll rely on finding it via transaction history
+            } catch (err) {
+              console.warn('Could not fetch community object:', err);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not find CommunityMembers object:', error);
+        }
+      }
+
+      return new Promise((resolve, reject) => {
+        if (!finalMembersId) {
+          reject(new Error('Could not find community members object. Please ensure you are a member of this community.'));
+          return;
+        }
+
+        const tx = new Transaction();
+
+        if (walrusBlobId) {
+          tx.moveCall({
+            target: `${PACKAGE_ID}::community::create_community_post_with_media`,
+            arguments: [
+              tx.object(GLOBAL_REGISTRY_ID),
+              tx.object(communityId),
+              tx.object(finalMembersId),
+              tx.pure.string(content),
+              tx.pure.string(walrusBlobId),
+              tx.object('0x6'), // Clock object
+            ],
+          });
+        } else {
+          tx.moveCall({
+            target: `${PACKAGE_ID}::community::create_community_post`,
+            arguments: [
+              tx.object(GLOBAL_REGISTRY_ID),
+              tx.object(communityId),
+              tx.object(finalMembersId),
+              tx.pure.string(content),
+              tx.object('0x6'), // Clock object
+            ],
+          });
+        }
+
+        signAndExecute(
+          { transaction: tx },
+          {
+            onSuccess: (result) => {
+              resolve(result);
+            },
+            onError: (error) => {
+              reject(error);
+            },
+          }
+        );
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['community-posts'] });
+      queryClient.invalidateQueries({ queryKey: ['suits'] });
+    },
+  });
+}
+
+// Hook to fetch posts for a specific community
+export function useCommunityPosts(communityId: string | null) {
+  const suiClient = useSuiClient();
+
+  return useQuery({
+    queryKey: ['community-posts', communityId],
+    queryFn: async () => {
+      if (!communityId) return [];
+
+      try {
+        // Query for CommunityPostCreated events for this community
+        const events = await suiClient.queryEvents({
+          query: {
+            MoveEventType: `${PACKAGE_ID}::suitter::CommunityPostCreated`,
+          },
+          limit: 100,
+          order: 'descending',
+        });
+
+        // Filter events for this community
+        const communityPostEvents = events.data.filter((event: any) => {
+          const parsedJson = event.parsedJson as any;
+          return parsedJson?.community_id === communityId;
+        });
+
+        // Extract suit IDs from events
+        const suitIds = communityPostEvents
+          .map((event) => {
+            const parsedJson = event.parsedJson as any;
+            return parsedJson?.suit_id || parsedJson?.suitId;
+          })
+          .filter((id): id is string => !!id && typeof id === 'string');
+
+        if (suitIds.length === 0) return [];
+
+        // Fetch all suits
+        const objects = await suiClient.multiGetObjects({
+          ids: suitIds,
+          options: {
+            showContent: true,
+            showType: true,
+          },
+        });
+
+        return objects
+          .map((obj) => {
+            if (!obj.data) return null;
+            const content = obj.data.content as any;
+            if (!content || !content.fields) return null;
+
+            return {
+              id: obj.data.objectId,
+              author: content.fields.author || '',
+              content: content.fields.content || '',
+              timestamp_ms: Number(content.fields.timestamp_ms || 0),
+              likes_count: Number(content.fields.likes_count || 0),
+              comments_count: Number(content.fields.comments_count || 0),
+              reposts_count: Number(content.fields.reposts_count || 0),
+              walrus_blob_id: extractOptionString(content.fields.walrus_blob_id, 'walrus_blob_id'),
+            } as Suit;
+          })
+          .filter((suit): suit is Suit => suit !== null)
+          .sort((a, b) => b.timestamp_ms - a.timestamp_ms); // Sort by newest first
+      } catch (error) {
+        console.error('Error fetching community posts:', error);
+        return [];
+      }
+    },
+    enabled: !!communityId,
+    refetchInterval: 10000,
+  });
+}
+
 // Export constants for use in other files
 export {
   PACKAGE_ID,
@@ -1410,5 +2074,6 @@ export {
   MENTION_REGISTRY_ID,
   FOLLOW_REGISTRY_ID,
   CONVERSATION_REGISTRY_ID,
+  COMMUNITY_REGISTRY_ID,
 };
 

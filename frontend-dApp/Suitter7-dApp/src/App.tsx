@@ -9,6 +9,7 @@ import { CreateSuit } from './pages/CreateSuit';
 import { Notifications } from './pages/Notifications';
 import { Communities } from './pages/Communities';
 import { CreateCommunity } from './pages/CreateCommunity';
+import { CommunityDetails } from './pages/CommunityDetails';
 import { SuitDetails } from './pages/SuitDetails';
 
 function App() {
@@ -74,6 +75,7 @@ function App() {
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/communities" element={<Communities />} />
           <Route path="/communities/create" element={<CreateCommunity />} />
+          <Route path="/communities/:id" element={<CommunityDetails />} />
           <Route path="/suit/:id" element={<SuitDetails />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

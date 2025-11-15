@@ -142,18 +142,6 @@ export function Profile() {
       ? `@${account.address.slice(0, 8)}...${account.address.slice(-4)}`
       : '@unknown';
 
-  // Show loading state while profile is being created
-  if (isLoadingProfile || createProfile.isPending) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-primary mb-4"></div>
-          <p className="text-muted-foreground">Creating your profile...</p>
-        </div>
-      </div>
-    );
-  }
-
   // Show create profile prompt if no profile exists
   if (!account?.address) {
     return (
@@ -168,8 +156,22 @@ export function Profile() {
     );
   }
 
-  // Show profile creation prompt if profile doesn't exist
-  if (!profile && !createProfile.isPending) {
+  // Show loading state only while profile is being fetched for the first time
+  // Don't show loading when auto-create is in progress to prevent reload loops
+  if (isLoadingProfile && !profile && !createProfile.isPending) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-primary mb-4"></div>
+          <p className="text-muted-foreground">Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show profile creation prompt if profile doesn't exist and not currently creating
+  // During auto-create, show a stable UI instead of reloading
+  if (!profile && !createProfile.isPending && !isLoadingProfile) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center max-w-md bg-card rounded-2xl border border-border p-8">
@@ -184,6 +186,19 @@ export function Profile() {
           >
             {createProfile.isPending ? 'Creating Profile...' : 'Create Profile'}
           </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show creating state during auto-create (prevents reload loop)
+  if (!profile && createProfile.isPending) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-primary mb-4"></div>
+          <p className="text-muted-foreground">Creating your profile...</p>
+          <p className="text-sm text-muted-foreground mt-2">Please wait while we set up your profile.</p>
         </div>
       </div>
     );

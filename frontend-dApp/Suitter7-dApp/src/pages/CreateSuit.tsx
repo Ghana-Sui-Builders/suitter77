@@ -4,14 +4,14 @@ import { useCurrentAccount } from '@mysten/dapp-kit';
 import { useState, useRef } from 'react';
 import { WalrusService } from '../services/walrus';
 import toast from 'react-hot-toast';
-import { Image, Video, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 export function CreateSuit() {
   const account = useCurrentAccount();
   const [activeTab, setActiveTab] = useState<'text' | 'video' | 'image'>('text');
   const [content, setContent] = useState('');
   const [walrusBlobId, setWalrusBlobId] = useState<string>('');
-  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);

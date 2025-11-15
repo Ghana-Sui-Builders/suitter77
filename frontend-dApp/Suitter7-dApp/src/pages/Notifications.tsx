@@ -98,14 +98,6 @@ export function Notifications() {
     }
   }, [notifications, activeTab]);
 
-  // Get user profile for avatar (deprecated - use getUserDisplayName instead)
-  const getUserProfile = (userAddress: string) => {
-    // This is kept for backward compatibility but should use getUserDisplayName
-    return {
-      avatar: getUserAvatarInitial(userAddress, null),
-      username: getUserDisplayName(userAddress, null),
-    };
-  };
 
   // Handle view suit - navigate to home page with suit ID in state
   const handleViewSuit = (suitId: string | undefined) => {
