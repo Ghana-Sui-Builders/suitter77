@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useCurrentAccount } from '@mysten/dapp-kit';
 
 export interface ProfileMetadata {
   displayName: string;

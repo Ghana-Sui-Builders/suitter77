@@ -1,4 +1,4 @@
-import { ConnectButton, useWallets } from '@mysten/dapp-kit';
+import { ConnectButton, useWallets, useCurrentAccount } from '@mysten/dapp-kit';
 import { Link, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { 
@@ -13,10 +13,17 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useSuits, useTopicStats, useAllProfiles } from '../hooks/useContract';
+import { FollowButton } from './FollowButton';
+import { getUserDisplayName, getUserHandle, getUserAvatarInitial, getUserProfileImageUrl } from '../utils/userDisplay';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const wallets = useWallets();
+  const account = useCurrentAccount();
+  const { data: suits } = useSuits();
+  const { data: topicStats } = useTopicStats(suits);
+  const { data: allProfiles, isLoading: isLoadingProfiles } = useAllProfiles();
 
   useEffect(() => {
     console.log('🔍 [Layout] Wallets changed! Count:', wallets.length);
@@ -148,46 +155,107 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </main>
 
           {/* Right Sidebar */}
-          <aside className="w-64 min-h-[calc(100vh-4rem)] border-l border-border pt-6 px-6 sticky top-16">
+          <aside className="w-64 min-h-[calc(100vh-4rem)] border-l border-border pt-6 px-6 sticky top-16 space-y-6">
             {/* Trending Hashtags */}
-            <div className="mb-8">
+            <div className="bg-card rounded-2xl border border-border p-4">
               <h2 className="text-lg font-semibold text-foreground mb-4">Trending Hashtags</h2>
               <div className="space-y-2">
-                {['#Sui', '#zkLogin', '#DeSoc'].map((hashtag) => (
-                  <Button
-                    key={hashtag}
-                    variant="ghost"
-                    className="w-full justify-start text-primary hover:bg-accent hover:text-accent-foreground"
-                  >
-                    {hashtag}
-                  </Button>
-                ))}
+                {topicStats && topicStats.length > 0 ? (
+                  topicStats.slice(0, 5).map((topic) => (
+                    <Button
+                      key={topic.hashtag}
+                      variant="ghost"
+                      className="w-full justify-start text-primary hover:bg-accent hover:text-accent-foreground"
+                      asChild
+                    >
+                      <Link to={`/explore?hashtag=${topic.hashtag}`}>
+                        <Hash className="w-4 h-4 mr-2" />
+                        #{topic.hashtag}
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {topic.count >= 1000 ? `${(topic.count / 1000).toFixed(1)}k` : topic.count}
+                        </span>
+                      </Link>
+                    </Button>
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground py-4 text-center">
+                    No trending hashtags yet
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Who to follow */}
-            <div>
+            <div className="bg-card rounded-2xl border border-border p-4">
               <h2 className="text-lg font-semibold text-foreground mb-4">Who to follow</h2>
               <div className="space-y-4">
-                {[
-                  { name: 'Ari M.', handle: '@ari', avatar: 'A' },
-                  { name: 'Kai', handle: '@kai_dev', avatar: 'K' },
-                ].map((user) => (
-                  <div key={user.handle} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-medium text-muted-foreground shrink-0">
-                        {user.avatar}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-medium text-sm text-foreground truncate">{user.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">{user.handle}</div>
-                      </div>
-                    </div>
-                    <Button size="sm" variant="default" className="shrink-0 ml-2">
-                      Follow
-                    </Button>
+                {isLoadingProfiles ? (
+                  <div className="text-sm text-muted-foreground py-4 text-center">
+                    Loading...
                   </div>
-                ))}
+                ) : (() => {
+                  // Filter out current user and get top profiles by followers
+                  const filteredProfiles = allProfiles
+                    ?.filter((profile) => 
+                      account?.address?.toLowerCase() !== profile.owner.toLowerCase()
+                    )
+                    .sort((a, b) => b.followers_count - a.followers_count)
+                    .slice(0, 3) || [];
+
+                  if (filteredProfiles.length === 0) {
+                    return (
+                      <div className="text-sm text-muted-foreground py-4 text-center">
+                        No users to follow yet
+                      </div>
+                    );
+                  }
+
+                  return filteredProfiles.map((profile) => {
+                    const displayName = getUserDisplayName(profile.owner, profile);
+                    const handle = getUserHandle(profile.owner, profile);
+                    const avatarInitial = getUserAvatarInitial(profile.owner, profile);
+                    const profileImageUrl = getUserProfileImageUrl(profile);
+
+                    return (
+                      <div key={profile.id} className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-medium text-muted-foreground shrink-0 overflow-hidden">
+                            {profileImageUrl ? (
+                              <img
+                                src={profileImageUrl}
+                                alt={displayName}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent) {
+                                    const fallback = document.createElement('span');
+                                    fallback.className = 'text-muted-foreground font-medium text-sm';
+                                    fallback.textContent = avatarInitial;
+                                    parent.appendChild(fallback);
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span>{avatarInitial}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-sm text-foreground truncate">{displayName}</div>
+                            <div className="text-xs text-muted-foreground truncate">{handle}</div>
+                          </div>
+                        </div>
+                        <FollowButton
+                          profile={profile}
+                          size="sm"
+                          variant="default"
+                          className="shrink-0 ml-2"
+                        />
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           </aside>

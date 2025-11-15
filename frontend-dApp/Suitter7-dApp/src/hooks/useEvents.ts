@@ -1,7 +1,7 @@
 import { useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
 
-const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0xc9b9f6d8d275a0860d4433bef712cb3ec28f0b014064e56b13931071661ff99c';
+const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0x2039f72d58be7166b210e54145ecff010ea50ddca6043db743ea8a25e7542d39';
 
 // Hook to query SuitCreated events
 export function useSuitCreatedEvents(limit: number = 100) {
@@ -214,6 +214,57 @@ export function useUserFollowedEvents(follower?: string, limit: number = 50) {
         return {
           follower: parsedJson?.follower,
           followee: parsedJson?.followee,
+          txDigest: event.id.txDigest,
+        };
+      });
+    },
+    enabled: true,
+    refetchInterval: 10000,
+  });
+}
+
+// Hook to query MentionAdded events
+export function useMentionAddedEvents(contentId?: string, mentionedUser?: string, limit: number = 50) {
+  const suiClient = useSuiClient();
+
+  return useQuery({
+    queryKey: ['mention-added-events', contentId, mentionedUser, limit],
+    queryFn: async () => {
+      const events = await suiClient.queryEvents({
+        query: {
+          MoveModule: {
+            package: PACKAGE_ID,
+            module: 'suitter',
+          },
+          MoveEventType: `${PACKAGE_ID}::suitter::MentionAdded`,
+        },
+        limit,
+        order: 'descending',
+      });
+
+      // Filter by contentId or mentionedUser if provided
+      let filteredEvents = events.data;
+      if (contentId) {
+        filteredEvents = filteredEvents.filter((event) => {
+          const parsedJson = event.parsedJson as any;
+          return parsedJson?.content_id === contentId;
+        });
+      }
+      if (mentionedUser) {
+        filteredEvents = filteredEvents.filter((event) => {
+          const parsedJson = event.parsedJson as any;
+          return parsedJson?.mentioned_user?.toLowerCase() === mentionedUser.toLowerCase();
+        });
+      }
+
+      return filteredEvents.map((event) => {
+        const parsedJson = event.parsedJson as any;
+        return {
+          content_id: parsedJson?.content_id,
+          mention_id: parsedJson?.mention_id,
+          mentioner: parsedJson?.mentioner,
+          mentioned_user: parsedJson?.mentioned_user,
+          content_type: parsedJson?.content_type, // 0 = suit, 1 = comment
           txDigest: event.id.txDigest,
         };
       });

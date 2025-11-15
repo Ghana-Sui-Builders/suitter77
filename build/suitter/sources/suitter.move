@@ -1,9 +1,18 @@
 module suitter::suitter {
     use std::string::{String};
     use sui::event;
+    use sui::table::{Self, Table};
 
     public struct AdminCap has key, store {
         id: UID,
+    }
+
+    /// Suit information stored in the registry
+    public struct SuitInfo has copy, drop, store {
+        suit_id: ID,
+        author: address,
+        timestamp_ms: u64,
+        has_media: bool,
     }
 
     public struct GlobalRegistry has key {
@@ -13,6 +22,12 @@ module suitter::suitter {
         total_likes: u64,
         total_comments: u64,
         total_reposts: u64,
+        total_mentions: u64,
+        total_messages: u64,
+        /// Table storing all posts (suits) by suit_id
+        posts: Table<ID, SuitInfo>,
+        /// Table storing suit IDs by author address for quick lookups
+        author_suits: Table<address, Table<ID, bool>>,
     }
 
     public struct SuitCreated has copy, drop {
@@ -55,6 +70,28 @@ module suitter::suitter {
         unfollowee: address,
     }
 
+    public struct MentionAdded has copy, drop {
+        content_id: ID,
+        mention_id: ID,
+        mentioner: address,
+        mentioned_user: address,
+        content_type: u8,  // 0 = suit, 1 = comment
+    }
+
+    public struct ConversationCreated has copy, drop {
+        conversation_id: ID,
+        participant1: address,
+        participant2: address,
+        timestamp_ms: u64,
+    }
+
+    public struct MessageSent has copy, drop {
+        conversation_id: ID,
+        sender: address,
+        receiver: address,
+        timestamp_ms: u64,
+    }
+
     fun init(ctx: &mut TxContext) {
         let admin_cap = AdminCap {
             id: object::new(ctx),
@@ -67,6 +104,10 @@ module suitter::suitter {
             total_likes: 0,
             total_comments: 0,
             total_reposts: 0,
+            total_mentions: 0,
+            total_messages: 0,
+            posts: table::new(ctx),
+            author_suits: table::new(ctx),
         };
 
         transfer::transfer(admin_cap, ctx.sender());
@@ -91,6 +132,114 @@ module suitter::suitter {
 
     public fun increment_reposts(registry: &mut GlobalRegistry) {
         registry.total_reposts = registry.total_reposts + 1;
+    }
+
+    public fun increment_mentions(registry: &mut GlobalRegistry) {
+        registry.total_mentions = registry.total_mentions + 1;
+    }
+
+    public fun increment_messages(registry: &mut GlobalRegistry) {
+        registry.total_messages = registry.total_messages + 1;
+    }
+
+    /// Register a new suit in the global registry
+    public fun register_suit(
+        registry: &mut GlobalRegistry,
+        suit_id: ID,
+        author: address,
+        timestamp_ms: u64,
+        has_media: bool,
+        ctx: &mut TxContext
+    ) {
+        let suit_info = SuitInfo {
+            suit_id,
+            author,
+            timestamp_ms,
+            has_media,
+        };
+        
+        // Add to posts table
+        table::add(&mut registry.posts, suit_id, suit_info);
+        
+        // Add to author_suits table for quick lookups
+        if (!table::contains(&registry.author_suits, author)) {
+            table::add(&mut registry.author_suits, author, table::new(ctx));
+        };
+        let author_suits_table = table::borrow_mut(&mut registry.author_suits, author);
+        table::add(author_suits_table, suit_id, true);
+    }
+
+    /// Check if a suit exists in the registry
+    public fun suit_exists(registry: &GlobalRegistry, suit_id: ID): bool {
+        table::contains(&registry.posts, suit_id)
+    }
+
+    /// Get suit information from the registry
+    public fun get_suit_info(registry: &GlobalRegistry, suit_id: ID): Option<SuitInfo> {
+        if (table::contains(&registry.posts, suit_id)) {
+            option::some(*table::borrow(&registry.posts, suit_id))
+        } else {
+            option::none()
+        }
+    }
+
+    /// Get suit author
+    public fun get_suit_author(registry: &GlobalRegistry, suit_id: ID): Option<address> {
+        if (table::contains(&registry.posts, suit_id)) {
+            let info = table::borrow(&registry.posts, suit_id);
+            option::some(info.author)
+        } else {
+            option::none()
+        }
+    }
+
+    /// Get suit timestamp
+    public fun get_suit_timestamp(registry: &GlobalRegistry, suit_id: ID): Option<u64> {
+        if (table::contains(&registry.posts, suit_id)) {
+            let info = table::borrow(&registry.posts, suit_id);
+            option::some(info.timestamp_ms)
+        } else {
+            option::none()
+        }
+    }
+
+    /// Check if a suit has media
+    public fun suit_has_media(registry: &GlobalRegistry, suit_id: ID): bool {
+        if (table::contains(&registry.posts, suit_id)) {
+            let info = table::borrow(&registry.posts, suit_id);
+            info.has_media
+        } else {
+            false
+        }
+    }
+
+    /// Check if an author has created a specific suit
+    public fun author_has_suit(registry: &GlobalRegistry, author: address, suit_id: ID): bool {
+        if (!table::contains(&registry.author_suits, author)) {
+            return false
+        };
+        let author_suits_table = table::borrow(&registry.author_suits, author);
+        table::contains(author_suits_table, suit_id)
+    }
+
+    /// Get suit ID from SuitInfo
+    public fun suit_info_id(info: &SuitInfo): ID {
+        info.suit_id
+    }
+
+    /// Get author from SuitInfo
+    public fun suit_info_author(info: &SuitInfo): address {
+        info.author
+    }
+
+    /// Get timestamp from SuitInfo
+    public fun suit_info_timestamp(info: &SuitInfo): u64 {
+        info.timestamp_ms
+    }
+
+    /// Check if SuitInfo has media
+    public fun suit_info_has_media(info: &SuitInfo): bool {
+        info.has_media
     }
 
     public fun emit_suit_created(suit_id: ID, author: address, timestamp: u64) {
@@ -119,5 +268,17 @@ module suitter::suitter {
 
     public fun emit_user_unfollowed(unfollower: address, unfollowee: address) {
         event::emit(UserUnfollowed { unfollower, unfollowee });
+    }
+
+    public fun emit_mention_added(content_id: ID, mention_id: ID, mentioner: address, mentioned_user: address, content_type: u8) {
+        event::emit(MentionAdded { content_id, mention_id, mentioner, mentioned_user, content_type });
+    }
+
+    public fun emit_conversation_created(conversation_id: ID, participant1: address, participant2: address, timestamp_ms: u64) {
+        event::emit(ConversationCreated { conversation_id, participant1, participant2, timestamp_ms });
+    }
+
+    public fun emit_message_sent(conversation_id: ID, sender: address, receiver: address, timestamp_ms: u64) {
+        event::emit(MessageSent { conversation_id, sender, receiver, timestamp_ms });
     }
 }

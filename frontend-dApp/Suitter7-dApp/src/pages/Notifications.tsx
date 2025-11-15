@@ -3,10 +3,28 @@ import { useNavigate } from 'react-router-dom';
 import { useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { useNotifications, useFollowUser, useProfile, Profile } from '../hooks/useContract';
 import { Button } from '@/components/ui/button';
+import { getUserDisplayName, getUserHandle, getUserAvatarInitial, getUserProfileImageUrl } from '../utils/userDisplay';
 import { SuitModal } from '../components/SuitModal';
 import toast from 'react-hot-toast';
 
-const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0xc9b9f6d8d275a0860d4433bef712cb3ec28f0b014064e56b13931071661ff99c';
+const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0x2039f72d58be7166b210e54145ecff010ea50ddca6043db743ea8a25e7542d39';
+
+// Helper function to extract Option<String> from Sui object (same as in useContract.ts)
+function extractOptionString(optionField: any): string | undefined {
+  if (!optionField) return undefined;
+  if (typeof optionField === 'string') return optionField || undefined;
+  if (optionField.fields?.vec && Array.isArray(optionField.fields.vec) && optionField.fields.vec.length > 0) {
+    return optionField.fields.vec[0] || undefined;
+  }
+  if (optionField.fields && Array.isArray(optionField.fields) && optionField.fields.length > 0) {
+    return optionField.fields[0] || undefined;
+  }
+  if (optionField.vec && Array.isArray(optionField.vec) && optionField.vec.length > 0) {
+    return optionField.vec[0] || undefined;
+  }
+  if (optionField.fields?.[0]) return optionField.fields[0] || undefined;
+  return undefined;
+}
 
 export function Notifications() {
   const account = useCurrentAccount();
@@ -52,7 +70,7 @@ export function Notifications() {
         owner: content.fields.owner || address,
         username: content.fields.username || '',
         bio: content.fields.bio || '',
-        profile_image_blob_id: content.fields.profile_image_blob_id?.fields?.[0] || undefined,
+        profile_image_blob_id: extractOptionString(content.fields.profile_image_blob_id),
         suits_count: Number(content.fields.suits_count || 0),
         followers_count: Number(content.fields.followers_count || 0),
         following_count: Number(content.fields.following_count || 0),
@@ -80,12 +98,12 @@ export function Notifications() {
     }
   }, [notifications, activeTab]);
 
-  // Get user profile for avatar
+  // Get user profile for avatar (deprecated - use getUserDisplayName instead)
   const getUserProfile = (userAddress: string) => {
-    // This would ideally use a hook to fetch profile, but for now we'll use initials
+    // This is kept for backward compatibility but should use getUserDisplayName
     return {
-      avatar: userAddress[2]?.toUpperCase() || 'U',
-      username: `User${userAddress.slice(2, 6)}`,
+      avatar: getUserAvatarInitial(userAddress, null),
+      username: getUserDisplayName(userAddress, null),
     };
   };
 
@@ -235,99 +253,104 @@ export function Notifications() {
       ) : (
         <div className="space-y-4">
           {filteredNotifications.map((notif, idx) => {
-            const userInfo = getUserProfile(notif.userAddress);
-            const isFollowing = followingUser === notif.userAddress;
-
-            return (
-              <div
-                key={idx}
-                className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-md transition-shadow"
-              >
-                <div className="flex gap-4">
+            const NotificationUser = ({ userAddress }: { userAddress: string }) => {
+              const { data: userProfile } = useProfile(userAddress);
+              const displayName = getUserDisplayName(userAddress, userProfile || undefined);
+              const handle = getUserHandle(userAddress, userProfile || undefined);
+              const avatarInitial = getUserAvatarInitial(userAddress, userProfile || undefined);
+              const profileImageUrl = getUserProfileImageUrl(userProfile || undefined);
+              
+              return (
+                <div className="flex items-start gap-4 p-4 bg-white rounded-xl border border-gray-100 hover:shadow-md transition-shadow">
                   {/* Avatar */}
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
-                    <span className="text-white font-semibold text-base">{userInfo.avatar}</span>
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden">
+                    {profileImageUrl ? (
+                      <img
+                        src={profileImageUrl}
+                        alt={displayName}
+                        className="w-full h-full rounded-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent) {
+                            const fallback = document.createElement('span');
+                            fallback.className = 'text-white font-semibold text-sm';
+                            fallback.textContent = avatarInitial;
+                            parent.appendChild(fallback);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <span className="text-white font-semibold text-sm">
+                        {avatarInitial}
+                      </span>
+                    )}
                   </div>
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="font-bold text-gray-900 text-[15px]">{userInfo.username}</span>
-                      <span className="text-gray-500 text-sm">{notif.action}</span>
-                      <span className="text-gray-400 text-sm">•</span>
-                      <span className="text-gray-500 text-sm">{notif.time}</span>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold text-gray-900 text-sm">{displayName}</span>
+                      <span className="text-gray-500 text-xs">{handle}</span>
+                      <span className="text-gray-400 text-xs">•</span>
+                      <span className="text-gray-500 text-xs">{notif.time}</span>
                     </div>
-
-                    {/* Suit Content Quote */}
+                    <p className="text-gray-700 text-sm">
+                      <span className="font-semibold">{displayName}</span> {notif.action}
+                    </p>
                     {notif.content && (
-                      <div className="bg-gray-50 rounded-xl p-4 mb-3 border-l-4 border-blue-500">
-                        <p className="text-gray-700 text-sm leading-relaxed">"{notif.content}"</p>
-                      </div>
+                      <p className="text-gray-600 text-sm mt-2 italic">"{notif.content}"</p>
                     )}
-
+                    
                     {/* Action Buttons */}
                     <div className="flex gap-2 mt-3">
+                      {notif.suit_id && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleViewSuit(notif.suit_id)}
+                            className="text-xs"
+                          >
+                            View Suit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleViewThread(notif.suit_id)}
+                            className="text-xs"
+                          >
+                            View Thread
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleReply(notif.suit_id)}
+                            className="text-xs"
+                          >
+                            Reply
+                          </Button>
+                        </>
+                      )}
                       {notif.type === 'follow' && (
                         <Button
                           variant="default"
                           size="sm"
-                          className="bg-blue-600 hover:bg-blue-700 text-white"
-                          onClick={() => handleFollowBack(notif.userAddress)}
-                          disabled={isFollowing || followUser.isPending}
+                          onClick={() => handleFollowBack(userAddress)}
+                          disabled={followingUser === userAddress}
+                          className="text-xs bg-blue-600 hover:bg-blue-700 text-white"
                         >
-                          {followUser.isPending && isFollowing ? 'Following...' : 'Follow back'}
-                        </Button>
-                      )}
-                      {notif.type === 'comment' && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleReply(notif.suit_id)}
-                          >
-                            Reply
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewThread(notif.suit_id)}
-                          >
-                            View Thread
-                          </Button>
-                        </>
-                      )}
-                      {notif.type === 'like' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewSuit(notif.suit_id)}
-                        >
-                          View Suit
-                        </Button>
-                      )}
-                      {notif.type === 'mention' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewSuit(notif.suit_id)}
-                        >
-                          View Suit
-                        </Button>
-                      )}
-                      {notif.type === 'repost' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewSuit(notif.suit_id)}
-                        >
-                          View Suit
+                          {followingUser === userAddress ? 'Following...' : 'Follow Back'}
                         </Button>
                       )}
                     </div>
                   </div>
                 </div>
-              </div>
-            );
+              );
+            };
+            
+            return <NotificationUser key={idx} userAddress={notif.userAddress} />;
           })}
         </div>
       )}

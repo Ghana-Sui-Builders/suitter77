@@ -1,5 +1,5 @@
 import { HeartIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
-import { useLikeSuit, useCommentOnSuit, useCommentOnSuitWithMedia, useRepostSuit, Suit } from '../hooks/useContract';
+import { useLikeSuit, useCommentOnSuit, useCommentOnSuitWithMedia, useRepostSuit, Suit, useProfile } from '../hooks/useContract';
 import { useComments } from '../hooks/useComments';
 import { useLikeAddedEvents, useRepostAddedEvents } from '../hooks/useEvents';
 import { useCurrentAccount } from '@mysten/dapp-kit';
@@ -7,21 +7,24 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { WalrusService } from '../services/walrus';
-import { Image } from 'lucide-react';
+import { Image, Repeat2 } from 'lucide-react';
+import { getUserDisplayName, getUserHandle, getUserAvatarInitial, getUserProfileImageUrl } from '../utils/userDisplay';
 
 interface SuitCardProps {
   suit: Suit;
-  authorUsername?: string;
+  authorUsername?: string; // Deprecated: Use profile from useProfile hook instead
   authorAvatar?: string;
   defaultShowComments?: boolean;
   defaultShowReply?: boolean;
+  isRepost?: boolean;
 }
 
-export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowComments = false, defaultShowReply = false }: SuitCardProps) {
+export function SuitCard({ suit, authorUsername: _authorUsername, authorAvatar, defaultShowComments = false, defaultShowReply = false, isRepost = false }: SuitCardProps) {
   const account = useCurrentAccount();
   const navigate = useNavigate();
   const likeSuit = useLikeSuit();
   const repostSuit = useRepostSuit();
+  const { data: authorProfile } = useProfile(suit.author);
   const [showCommentInput, setShowCommentInput] = useState(defaultShowReply);
   const [showComments, setShowComments] = useState(defaultShowComments);
   const [commentContent, setCommentContent] = useState('');
@@ -36,6 +39,7 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
   const { data: repostEvents } = useRepostAddedEvents(suit.id);
   const [isLiked, setIsLiked] = useState(false);
   const [isReposted, setIsReposted] = useState(false);
+  const [mediaType, setMediaType] = useState<'image' | 'video' | 'unknown'>('image');
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Don't navigate if clicking on interactive elements
@@ -85,6 +89,60 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
       setIsReposted(false);
     }
   }, [repostEvents, account?.address]);
+
+  // Detect media type (image or video)
+  useEffect(() => {
+    const blobId = suit.walrus_blob_id;
+    if (!blobId) {
+      setMediaType('unknown');
+      return;
+    }
+
+    const detectMediaType = async () => {
+      try {
+        const mediaUrl = WalrusService.getBlobUrl(blobId);
+        
+        // First, try to fetch headers to check Content-Type
+        try {
+          const response = await fetch(mediaUrl, { method: 'HEAD' });
+          const contentType = response.headers.get('Content-Type') || '';
+          
+          if (contentType.startsWith('video/')) {
+            setMediaType('video');
+            return;
+          } else if (contentType.startsWith('image/')) {
+            setMediaType('image');
+            return;
+          }
+        } catch (headError) {
+          // HEAD request might fail due to CORS, continue to fallback
+          console.debug('HEAD request failed, using fallback detection:', headError);
+        }
+        
+        // Fallback: try to determine by testing with video element
+        // We'll try loading as video first, then fall back to image
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        
+        video.onloadedmetadata = () => {
+          setMediaType('video');
+        };
+        
+        video.onerror = () => {
+          // If video fails, assume it's an image
+          setMediaType('image');
+        };
+        
+        video.src = mediaUrl;
+      } catch (error) {
+        // On error, default to image (most common case)
+        console.warn('Could not detect media type, defaulting to image:', error);
+        setMediaType('image');
+      }
+    };
+
+    detectMediaType();
+  }, [suit.walrus_blob_id]);
 
   const formatTime = (timestamp: number) => {
     if (!timestamp) return 'Just now';
@@ -253,9 +311,12 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
     }
   };
 
-  // Extract username from author address or use provided
-  const displayName = authorUsername || `User${suit.author.slice(2, 6)}`;
-  const handle = `@${suit.author.slice(0, 4)}${suit.author.slice(-4)}`;
+  // Get display name with fallback priority: displayName > username > address
+  const displayName = getUserDisplayName(suit.author, authorProfile || undefined);
+  const handle = getUserHandle(suit.author, authorProfile || undefined);
+  const avatarInitial = getUserAvatarInitial(suit.author, authorProfile || undefined);
+  // Get profile image URL from profile, fallback to authorAvatar prop
+  const profileImageUrl = getUserProfileImageUrl(authorProfile || undefined) || authorAvatar;
 
   // Parse hashtags for styling
   const renderContent = (text: string) => {
@@ -280,16 +341,28 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
       <div className="flex gap-4">
         {/* Avatar */}
         <div className="relative flex-shrink-0">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md">
-            {authorAvatar ? (
+          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md overflow-hidden">
+            {profileImageUrl ? (
               <img 
-                src={authorAvatar} 
+                src={profileImageUrl} 
                 alt={displayName} 
                 className="w-full h-full rounded-full object-cover" 
+                onError={(e) => {
+                  // Fallback to initial if image fails to load
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const parent = target.parentElement;
+                  if (parent) {
+                    const fallback = document.createElement('span');
+                    fallback.className = 'text-white font-semibold text-base';
+                    fallback.textContent = avatarInitial;
+                    parent.appendChild(fallback);
+                  }
+                }}
               />
             ) : (
               <span className="text-white font-semibold text-base">
-                {displayName[0]?.toUpperCase() || 'U'}
+                {avatarInitial}
               </span>
             )}
           </div>
@@ -297,6 +370,14 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
 
         {/* Content */}
         <div className="flex-1 min-w-0">
+          {/* Repost Indicator */}
+          {isRepost && (
+            <div className="flex items-center gap-2 mb-2 text-gray-600 text-sm font-medium">
+              <Repeat2 className="w-4 h-4 text-gray-600" />
+              <span>You reposted</span>
+            </div>
+          )}
+          
           {/* Header */}
           <div className="flex items-center gap-6 mb-3">
             <span className="font-bold text-gray-900 text-[15px] hover:underline cursor-pointer">
@@ -317,17 +398,37 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
           {/* Media */}
           {suit.walrus_blob_id && (
             <div className="mb-4 rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-              <img
-                src={WalrusService.getBlobUrl(suit.walrus_blob_id)}
-                alt="Suit media"
-                className="w-full max-h-[500px] object-cover"
-                onError={(e) => {
-                  // Fallback if image fails to load
-                  console.error('Failed to load media:', suit.walrus_blob_id);
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                }}
-              />
+              {mediaType === 'video' ? (
+                <video
+                  src={WalrusService.getBlobUrl(suit.walrus_blob_id)}
+                  controls
+                  className="w-full max-h-[500px] object-contain bg-black"
+                  onError={() => {
+                    // Fallback to image if video fails
+                    console.error('Failed to load video, trying as image:', suit.walrus_blob_id);
+                    setMediaType('image');
+                  }}
+                >
+                  Your browser does not support the video tag.
+                </video>
+              ) : mediaType === 'unknown' ? (
+                // Show loading state while detecting
+                <div className="w-full h-[300px] bg-gray-100 flex items-center justify-center">
+                  <div className="text-gray-400 text-sm">Loading media...</div>
+                </div>
+              ) : (
+                <img
+                  src={WalrusService.getBlobUrl(suit.walrus_blob_id)}
+                  alt="Suit media"
+                  className="w-full max-h-[500px] object-cover"
+                  onError={(e) => {
+                    // Fallback if image fails to load
+                    console.error('Failed to load media:', suit.walrus_blob_id);
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                  }}
+                />
+              )}
             </div>
           )}
 
@@ -401,42 +502,78 @@ export function SuitCard({ suit, authorUsername, authorAvatar, defaultShowCommen
             <div className="mt-6 pt-6 border-t border-gray-100">
               {comments && comments.length > 0 ? (
                 <div className="space-y-5 mb-4">
-                  {comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-3 group">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-sm">
-                        <span className="text-sm font-semibold text-white">
-                          {comment.author[0]?.toUpperCase() || 'U'}
-                        </span>
-                      </div>
-                      <div className="flex-1 bg-gray-50 rounded-xl px-4 py-3 group-hover:bg-gray-100 transition-colors">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-sm font-bold text-gray-900">
-                            @{comment.author.slice(0, 4)}...{comment.author.slice(-4)}
-                          </span>
-                          <span className="text-sm text-gray-400">
-                            {formatTime(comment.timestamp_ms)}
-                          </span>
-                        </div>
-                        <p className="text-[15px] text-gray-800 leading-relaxed">
-                          {comment.content}
-                        </p>
-                        {comment.walrus_blob_id && (
-                          <div className="mt-3 rounded-lg overflow-hidden border border-gray-200">
-                            <img
-                              src={WalrusService.getBlobUrl(comment.walrus_blob_id)}
-                              alt="Comment media"
-                              className="w-full max-h-[300px] object-cover"
-                              onError={(e) => {
-                                console.error('Failed to load comment media:', comment.walrus_blob_id);
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                              }}
-                            />
+                  {comments.map((comment) => {
+                    const CommentAuthor = ({ authorAddress, comment: commentData }: { authorAddress: string; comment: typeof comment }) => {
+                      const { data: commentAuthorProfile } = useProfile(authorAddress);
+                      const commentDisplayName = getUserDisplayName(authorAddress, commentAuthorProfile || undefined);
+                      const commentHandle = getUserHandle(authorAddress, commentAuthorProfile || undefined);
+                      const commentAvatarInitial = getUserAvatarInitial(authorAddress, commentAuthorProfile || undefined);
+                      const commentProfileImageUrl = getUserProfileImageUrl(commentAuthorProfile || undefined);
+                      
+                      return (
+                        <div className="flex gap-3 group">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden">
+                            {commentProfileImageUrl ? (
+                              <img 
+                                src={commentProfileImageUrl} 
+                                alt={commentDisplayName} 
+                                className="w-full h-full rounded-full object-cover" 
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent) {
+                                    const fallback = document.createElement('span');
+                                    fallback.className = 'text-sm font-semibold text-white';
+                                    fallback.textContent = commentAvatarInitial;
+                                    parent.appendChild(fallback);
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span className="text-sm font-semibold text-white">
+                                {commentAvatarInitial}
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                          <div className="flex-1 bg-gray-50 rounded-xl px-4 py-3 group-hover:bg-gray-100 transition-colors">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-sm font-bold text-gray-900">
+                                {commentDisplayName}
+                              </span>
+                              <span className="text-sm text-gray-500">
+                                {commentHandle}
+                              </span>
+                              <span className="text-sm text-gray-400">
+                                {formatTime(commentData.timestamp_ms)}
+                              </span>
+                            </div>
+                            <p className="text-[15px] text-gray-800 leading-relaxed">
+                              {commentData.content}
+                            </p>
+                            {commentData.walrus_blob_id && (
+                              <div className="mt-3 rounded-lg overflow-hidden border border-gray-200">
+                                <img
+                                  src={WalrusService.getBlobUrl(commentData.walrus_blob_id)}
+                                  alt="Comment media"
+                                  className="w-full max-h-[300px] object-cover"
+                                  onError={(e) => {
+                                    console.error('Failed to load comment media:', commentData.walrus_blob_id);
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    };
+                    
+                    return (
+                      <CommentAuthor key={comment.id} authorAddress={comment.author} comment={comment} />
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-4 mb-4">

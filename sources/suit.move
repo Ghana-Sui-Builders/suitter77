@@ -1,7 +1,7 @@
 module suitter::suit {
     use std::string::{String};
     use sui::clock::{Clock};
-    use suitter::suitter::{GlobalRegistry, increment_suits, emit_suit_created};
+    use suitter::suitter::{GlobalRegistry, increment_suits, emit_suit_created, register_suit};
 
     const EContentTooLong: u64 = 1;
     const EContentEmpty: u64 = 2;
@@ -47,8 +47,13 @@ module suitter::suit {
         };
 
         let suit_id = object::id(&suit);
+        let timestamp = clock.timestamp_ms();
+        
+        // Register suit in global registry (no media)
+        register_suit(registry, suit_id, ctx.sender(), timestamp, false, ctx);
+        
         increment_suits(registry);
-        emit_suit_created(suit_id, ctx.sender(), clock.timestamp_ms());
+        emit_suit_created(suit_id, ctx.sender(), timestamp);
 
         transfer::share_object(suit);
     }
@@ -76,8 +81,13 @@ module suitter::suit {
         };
 
         let suit_id = object::id(&suit);
+        let timestamp = clock.timestamp_ms();
+        
+        // Register suit in global registry with media flag
+        register_suit(registry, suit_id, ctx.sender(), timestamp, true, ctx);
+        
         increment_suits(registry);
-        emit_suit_created(suit_id, ctx.sender(), clock.timestamp_ms());
+        emit_suit_created(suit_id, ctx.sender(), timestamp);
 
         transfer::share_object(suit);
     }

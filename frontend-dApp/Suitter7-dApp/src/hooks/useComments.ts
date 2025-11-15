@@ -2,7 +2,24 @@ import { useSuiClient } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
 import { Comment } from './useContract';
 
-const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0xc9b9f6d8d275a0860d4433bef712cb3ec28f0b014064e56b13931071661ff99c';
+// Helper function to extract Option<String> from Sui object (same as in useContract.ts)
+function extractOptionString(optionField: any): string | undefined {
+  if (!optionField) return undefined;
+  if (typeof optionField === 'string') return optionField || undefined;
+  if (optionField.fields?.vec && Array.isArray(optionField.fields.vec) && optionField.fields.vec.length > 0) {
+    return optionField.fields.vec[0] || undefined;
+  }
+  if (optionField.fields && Array.isArray(optionField.fields) && optionField.fields.length > 0) {
+    return optionField.fields[0] || undefined;
+  }
+  if (optionField.vec && Array.isArray(optionField.vec) && optionField.vec.length > 0) {
+    return optionField.vec[0] || undefined;
+  }
+  if (optionField.fields?.[0]) return optionField.fields[0] || undefined;
+  return undefined;
+}
+
+const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0x2039f72d58be7166b210e54145ecff010ea50ddca6043db743ea8a25e7542d39';
 
 // Hook to get comments for a specific Suit
 export function useComments(suitId: string | null) {
@@ -86,7 +103,7 @@ export function useComments(suitId: string | null) {
               author: content.fields.author || '',
               content: content.fields.content || '',
               timestamp_ms: Number(content.fields.timestamp_ms || 0),
-              walrus_blob_id: content.fields.walrus_blob_id?.fields?.[0] || undefined,
+              walrus_blob_id: extractOptionString(content.fields.walrus_blob_id),
             } as Comment;
           })
           .filter((comment): comment is Comment => comment !== null)

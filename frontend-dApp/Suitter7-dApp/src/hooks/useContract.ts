@@ -3,12 +3,64 @@ import { Transaction } from '@mysten/sui/transactions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 // Contract package ID - should be set after deployment
-const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0xc9b9f6d8d275a0860d4433bef712cb3ec28f0b014064e56b13931071661ff99c';
-const GLOBAL_REGISTRY_ID = import.meta.env.VITE_GLOBAL_REGISTRY_ID || '0x4b016278d762407abd1fa5bfd767bd54ce570ab45493a37500d2578bd82952ae';
-const PROFILE_REGISTRY_ID = import.meta.env.VITE_PROFILE_REGISTRY_ID || '0x296158c332bef3f992f3e35421fcce972bd8b86bd04c14d98f2389b5b46678f0';
-const LIKE_REGISTRY_ID = import.meta.env.VITE_LIKE_REGISTRY_ID || '0xa85e6acefe0667788969e315d4d277fa109f623d5c0fa149e64563f4fd4a14e3';
-const REPOST_REGISTRY_ID = import.meta.env.VITE_REPOST_REGISTRY_ID || '0x2400c5dc5cf79d303cbe727b2dc767591d029366f1a39718dee0c3244f5e068e';
-const FOLLOW_REGISTRY_ID = import.meta.env.VITE_FOLLOW_REGISTRY_ID || '0xb9aa873b8541586c98d7a853db9503e995e4d6dce358b9031faf651381856345';
+const PACKAGE_ID = import.meta.env.VITE_PACKAGE_ID || '0x2039f72d58be7166b210e54145ecff010ea50ddca6043db743ea8a25e7542d39';
+const GLOBAL_REGISTRY_ID = import.meta.env.VITE_GLOBAL_REGISTRY_ID || '0xbba109acd74facb5ac5219dd0685c08dd0a49894ab968f3788b1e5130f37596e';
+const PROFILE_REGISTRY_ID = import.meta.env.VITE_PROFILE_REGISTRY_ID || '0x5e34d722ad42643d57384069050e3520546b7dbb14f9fe3c458dec1d2fd02405';
+const LIKE_REGISTRY_ID = import.meta.env.VITE_LIKE_REGISTRY_ID || '0x58a25d466a6d17ce7dcefb4a674aef40cf5ab6637a5132f8a85bd34ed8674160';
+const REPOST_REGISTRY_ID = import.meta.env.VITE_REPOST_REGISTRY_ID || '0x0efb9245d856896cf171b41dbb9df716a3d6e1de123b68da8065319691b6742d';
+const MENTION_REGISTRY_ID = import.meta.env.VITE_MENTION_REGISTRY_ID || '0x88a2911a79b507d14ebe1285b8992f2f820836facea5f8ecd5bc32f6ca5b9ab1';
+const FOLLOW_REGISTRY_ID = import.meta.env.VITE_FOLLOW_REGISTRY_ID || '0x8f52804c50e672b6dce6273da1f0472a5992a660c738fa60ab581492a1086605';
+const CONVERSATION_REGISTRY_ID = import.meta.env.VITE_CONVERSATION_REGISTRY_ID || '0x2f1b3ed420bf9b8f5b1e71ed6f3dbe3340c75864d808a1cd7250ae3e86c0bc80';
+
+// Helper function to extract Option<String> from Sui object
+// Option<String> can be stored in various formats:
+// - { fields: { vec: ["value"] } } (standard Option with vector)
+// - { fields: [0: "value"] } (array-like structure)
+// - { vec: ["value"] } (direct vector)
+// - null/undefined for None
+function extractOptionString(optionField: any, fieldName: string = 'unknown'): string | undefined {
+  if (!optionField) {
+    console.debug(`extractOptionString(${fieldName}): field is null/undefined`);
+    return undefined;
+  }
+  
+  // Try direct access (if it's already a string or empty)
+  if (typeof optionField === 'string') {
+    console.debug(`extractOptionString(${fieldName}): found string value:`, optionField);
+    return optionField || undefined;
+  }
+  
+  // Try fields.vec (standard Option format)
+  if (optionField.fields?.vec && Array.isArray(optionField.fields.vec) && optionField.fields.vec.length > 0) {
+    const value = optionField.fields.vec[0];
+    console.debug(`extractOptionString(${fieldName}): found in fields.vec:`, value);
+    return value || undefined;
+  }
+  
+  // Try fields array (array-like structure)
+  if (optionField.fields && Array.isArray(optionField.fields) && optionField.fields.length > 0) {
+    const value = optionField.fields[0];
+    console.debug(`extractOptionString(${fieldName}): found in fields array:`, value);
+    return value || undefined;
+  }
+  
+  // Try direct vec access
+  if (optionField.vec && Array.isArray(optionField.vec) && optionField.vec.length > 0) {
+    const value = optionField.vec[0];
+    console.debug(`extractOptionString(${fieldName}): found in vec:`, value);
+    return value || undefined;
+  }
+  
+  // Fallback to old method
+  if (optionField.fields?.[0]) {
+    const value = optionField.fields[0];
+    console.debug(`extractOptionString(${fieldName}): found in fields[0]:`, value);
+    return value || undefined;
+  }
+  
+  console.debug(`extractOptionString(${fieldName}): no value found, field structure:`, JSON.stringify(optionField, null, 2));
+  return undefined;
+}
 
 // Types
 export interface Suit {
@@ -48,6 +100,15 @@ export interface Repost {
   suit_id: string;
   reposter: string;
   original_author: string;
+  timestamp_ms: number;
+}
+
+export interface Mention {
+  id: string;
+  content_id: string;
+  content_type: number; // 0 = suit, 1 = comment
+  mentioned_user: string;
+  mentioner: string;
   timestamp_ms: number;
 }
 
@@ -247,7 +308,7 @@ export function useSuits() {
               likes_count: Number(content.fields.likes_count || 0),
               comments_count: Number(content.fields.comments_count || 0),
               reposts_count: Number(content.fields.reposts_count || 0),
-              walrus_blob_id: content.fields.walrus_blob_id?.fields?.[0] || undefined,
+              walrus_blob_id: extractOptionString(content.fields.walrus_blob_id),
             } as Suit;
             
             console.log('Parsed suit:', suit);
@@ -337,7 +398,7 @@ export function useProfile(address: string | null) {
           owner: content.fields.owner || '',
           username: content.fields.username || '',
           bio: content.fields.bio || '',
-          profile_image_blob_id: content.fields.profile_image_blob_id?.fields?.[0] || undefined,
+          profile_image_blob_id: extractOptionString(content.fields.profile_image_blob_id, 'profile_image_blob_id'),
           suits_count: Number(content.fields.suits_count || 0),
           followers_count: Number(content.fields.followers_count || 0),
           following_count: Number(content.fields.following_count || 0),
@@ -546,6 +607,78 @@ export function useRepostSuit() {
   });
 }
 
+// Hook to mention a user in a suit
+export function useMentionUserInSuit() {
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ suitId, mentionedUserAddress }: { suitId: string; mentionedUserAddress: string }) => {
+      return new Promise((resolve, reject) => {
+        const tx = new Transaction();
+        tx.moveCall({
+          target: `${PACKAGE_ID}::interactions::mention_user_in_suit`,
+          arguments: [
+            tx.object(GLOBAL_REGISTRY_ID),
+            tx.object(MENTION_REGISTRY_ID),
+            tx.object(suitId),
+            tx.pure.address(mentionedUserAddress),
+            tx.object('0x6'), // Clock object
+          ],
+        });
+
+        signAndExecute(
+          { transaction: tx },
+          {
+            onSuccess: resolve,
+            onError: reject,
+          }
+        );
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mentions'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+}
+
+// Hook to mention a user in a comment
+export function useMentionUserInComment() {
+  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ commentId, mentionedUserAddress }: { commentId: string; mentionedUserAddress: string }) => {
+      return new Promise((resolve, reject) => {
+        const tx = new Transaction();
+        tx.moveCall({
+          target: `${PACKAGE_ID}::interactions::mention_user_in_comment`,
+          arguments: [
+            tx.object(GLOBAL_REGISTRY_ID),
+            tx.object(MENTION_REGISTRY_ID),
+            tx.object(commentId),
+            tx.pure.address(mentionedUserAddress),
+            tx.object('0x6'), // Clock object
+          ],
+        });
+
+        signAndExecute(
+          { transaction: tx },
+          {
+            onSuccess: resolve,
+            onError: reject,
+          }
+        );
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mentions'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+}
+
 // Hook to create a profile
 export function useCreateProfile() {
   const account = useCurrentAccount();
@@ -679,6 +812,8 @@ export function useFollowUser() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['is-following'] });
+      queryClient.invalidateQueries({ queryKey: ['all-profiles'] });
     },
   });
 }
@@ -712,7 +847,98 @@ export function useUnfollowUser() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['is-following'] });
+      queryClient.invalidateQueries({ queryKey: ['all-profiles'] });
     },
+  });
+}
+
+// Hook to check if a user is following another user
+export function useIsFollowing(followerAddress: string | null, followeeAddress: string | null) {
+  const suiClient = useSuiClient();
+
+  return useQuery({
+    queryKey: ['is-following', followerAddress, followeeAddress],
+    queryFn: async () => {
+      if (!followerAddress || !followeeAddress || followerAddress === followeeAddress) {
+        return false;
+      }
+
+      try {
+        // Query both follow and unfollow events
+        const [followEvents, unfollowEvents] = await Promise.all([
+          suiClient.queryEvents({
+            query: {
+              MoveEventType: `${PACKAGE_ID}::suitter::UserFollowed`,
+            },
+            limit: 1000,
+            order: 'descending',
+          }),
+          suiClient.queryEvents({
+            query: {
+              MoveEventType: `${PACKAGE_ID}::suitter::UserUnfollowed`,
+            },
+            limit: 1000,
+            order: 'descending',
+          }),
+        ]);
+
+        // Filter events for this specific follower-followee pair
+        const relevantFollowEvents = followEvents.data
+          .filter((event) => {
+            const parsedJson = event.parsedJson as any;
+            return (
+              parsedJson?.follower?.toLowerCase() === followerAddress.toLowerCase() &&
+              parsedJson?.followee?.toLowerCase() === followeeAddress.toLowerCase()
+            );
+          })
+          .map((event) => ({
+            txDigest: event.id.txDigest,
+            timestamp: event.timestampMs || 0,
+          }));
+
+        const relevantUnfollowEvents = unfollowEvents.data
+          .filter((event) => {
+            const parsedJson = event.parsedJson as any;
+            return (
+              parsedJson?.unfollower?.toLowerCase() === followerAddress.toLowerCase() &&
+              parsedJson?.unfollowee?.toLowerCase() === followeeAddress.toLowerCase()
+            );
+          })
+          .map((event) => ({
+            txDigest: event.id.txDigest,
+            timestamp: event.timestampMs || 0,
+          }));
+
+        // If no follow events, user is not following
+        if (relevantFollowEvents.length === 0) {
+          return false;
+        }
+
+        // If no unfollow events, user is following
+        if (relevantUnfollowEvents.length === 0) {
+          return true;
+        }
+
+        // Get the most recent follow and unfollow events
+        const latestFollow = relevantFollowEvents[0]; // Already sorted descending
+        const latestUnfollow = relevantUnfollowEvents[0]; // Already sorted descending
+
+        // Compare timestamps to determine the most recent action
+        // If unfollow is more recent, user is not following
+        if (latestUnfollow.timestamp > latestFollow.timestamp) {
+          return false;
+        }
+
+        // If follow is more recent or equal, user is following
+        return true;
+      } catch (error) {
+        console.error('Error checking if user is following:', error);
+        return false;
+      }
+    },
+    enabled: !!followerAddress && !!followeeAddress && followerAddress !== followeeAddress,
+    refetchInterval: 10000, // Refetch every 10 seconds
   });
 }
 
@@ -774,7 +1000,7 @@ export function useAllProfiles() {
               owner: content.fields.owner || owner,
               username: content.fields.username || '',
               bio: content.fields.bio || '',
-              profile_image_blob_id: content.fields.profile_image_blob_id?.fields?.[0] || undefined,
+              profile_image_blob_id: extractOptionString(content.fields.profile_image_blob_id, 'profile_image_blob_id'),
               suits_count: Number(content.fields.suits_count || 0),
               followers_count: Number(content.fields.followers_count || 0),
               following_count: Number(content.fields.following_count || 0),
@@ -1008,31 +1234,54 @@ export function useNotifications(userAddress: string | null) {
           })
         );
 
-        // Find mentions in all suits
-        if (suits && suits.length > 0) {
-          const userAddressShort = userAddress.slice(0, 6);
-          suits.forEach((suit) => {
-            // Check if suit content mentions the user (simple check for now)
-            // In a real implementation, you'd parse @mentions properly
-            if (
-              suit.content.toLowerCase().includes(`@${userAddressShort.toLowerCase()}`) ||
-              suit.content.toLowerCase().includes(userAddress.slice(-6).toLowerCase())
-            ) {
-              if (suit.author.toLowerCase() !== userAddress.toLowerCase()) {
-                notifications.push({
-                  type: 'mention',
-                  user: `User${suit.author?.slice(2, 6) || ''}`,
-                  userAddress: suit.author || '',
-                  action: 'mentioned you',
-                  time: formatNotificationTime(suit.timestamp_ms),
-                  timestamp_ms: suit.timestamp_ms,
-                  suit_id: suit.id,
-                  content: suit.content,
-                });
-              }
+        // Fetch MentionAdded events where the current user was mentioned
+        const mentionEvents = await suiClient.queryEvents({
+          query: {
+            MoveEventType: `${PACKAGE_ID}::suitter::MentionAdded`,
+          },
+          limit: 100,
+          order: 'descending',
+        });
+
+        mentionEvents.data.forEach((event) => {
+          const parsedJson = event.parsedJson as any;
+          if (parsedJson?.mentioned_user?.toLowerCase() === userAddress.toLowerCase()) {
+            // Get timestamp from transaction
+            let timestamp = Date.now();
+            try {
+              // Try to get timestamp from event or use current time
+              timestamp = Date.now();
+            } catch (error) {
+              console.error('Error getting mention timestamp:', error);
             }
-          });
-        }
+
+            const contentType = parsedJson?.content_type || 0; // 0 = suit, 1 = comment
+            const contentId = parsedJson?.content_id;
+            
+            // Find the suit or comment content
+            let content = '';
+            if (contentType === 0) {
+              // It's a suit mention
+              const suit = suits?.find((s) => s.id.toLowerCase() === contentId?.toLowerCase());
+              content = suit?.content || '';
+            } else {
+              // It's a comment mention - we'd need to fetch the comment
+              content = 'a comment';
+            }
+
+            notifications.push({
+              type: 'mention',
+              user: `User${parsedJson.mentioner?.slice(2, 6) || ''}`,
+              userAddress: parsedJson.mentioner || '',
+              action: contentType === 0 ? 'mentioned you in a Suit' : 'mentioned you in a comment',
+              time: formatNotificationTime(timestamp),
+              timestamp_ms: timestamp,
+              suit_id: contentType === 0 ? contentId : undefined,
+              comment_id: contentType === 1 ? contentId : undefined,
+              content: content,
+            });
+          }
+        });
 
         // Sort notifications by timestamp (newest first)
         return notifications.sort((a, b) => b.timestamp_ms - a.timestamp_ms);
@@ -1131,7 +1380,7 @@ export function useRepostsByUser(userAddress: string | null) {
                 likes_count: Number(content.fields.likes_count || 0),
                 comments_count: Number(content.fields.comments_count || 0),
                 reposts_count: Number(content.fields.reposts_count || 0),
-                walrus_blob_id: content.fields.walrus_blob_id?.fields?.[0] || undefined,
+                walrus_blob_id: extractOptionString(content.fields.walrus_blob_id),
               } as Suit,
               repost_id: repostInfo?.repost_id || '',
               repost_timestamp_ms: repostInfo?.timestamp_ms || Date.now(),
@@ -1150,4 +1399,16 @@ export function useRepostsByUser(userAddress: string | null) {
     refetchInterval: 10000,
   });
 }
+
+// Export constants for use in other files
+export {
+  PACKAGE_ID,
+  GLOBAL_REGISTRY_ID,
+  PROFILE_REGISTRY_ID,
+  LIKE_REGISTRY_ID,
+  REPOST_REGISTRY_ID,
+  MENTION_REGISTRY_ID,
+  FOLLOW_REGISTRY_ID,
+  CONVERSATION_REGISTRY_ID,
+};
 

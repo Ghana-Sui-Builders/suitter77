@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react';
 import { SuitCard } from '../components/SuitCard';
-import { useSuits, useCreateSuit, useAllProfiles, useTopicStats } from '../hooks/useContract';
+import { FollowButton } from '../components/FollowButton';
+import { useSuits, useCreateSuit, useAllProfiles, useTopicStats, useProfile } from '../hooks/useContract';
 import { useCurrentAccount } from '@mysten/dapp-kit';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
+import { getUserDisplayName, getUserHandle, getUserAvatarInitial, getUserProfileImageUrl } from '../utils/userDisplay';
 
 export function Explore() {
   const [activeTab, setActiveTab] = useState<'trending' | 'latest' | 'people' | 'topics'>('trending');
@@ -25,12 +27,7 @@ export function Explore() {
     if (!allProfiles || allProfiles.length === 0) return [];
     return allProfiles
       .sort((a, b) => b.followers_count - a.followers_count)
-      .slice(0, 3)
-      .map((profile) => ({
-        name: profile.username || `User${profile.owner.slice(2, 6)}`,
-        username: `@${profile.username || profile.owner.slice(0, 6)}`,
-        avatar: (profile.username || profile.owner)[0]?.toUpperCase() || 'U',
-      }));
+      .slice(0, 3);
   }, [allProfiles]);
 
   // Topic tags from real data
@@ -166,67 +163,59 @@ export function Explore() {
             
             <div className="grid grid-cols-3 gap-4">
               {peopleToFollow.length > 0 ? (
-                peopleToFollow.map((person, index) => (
-                  <div
-                    key={index}
-                    className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-md transition-shadow text-center"
-                  >
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md">
-                        <span className="text-white font-semibold text-lg">
-                          {person.avatar}
-                        </span>
+                peopleToFollow.map((profile) => {
+                  const displayName = getUserDisplayName(profile.owner, profile);
+                  const handle = getUserHandle(profile.owner, profile);
+                  const avatarInitial = getUserAvatarInitial(profile.owner, profile);
+                  const profileImageUrl = getUserProfileImageUrl(profile);
+                  
+                  return (
+                    <div
+                      key={profile.id}
+                      className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-md transition-shadow text-center"
+                    >
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md overflow-hidden">
+                          {profileImageUrl ? (
+                            <img
+                              src={profileImageUrl}
+                              alt={displayName}
+                              className="w-full h-full rounded-full object-cover"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const parent = target.parentElement;
+                                if (parent) {
+                                  const fallback = document.createElement('span');
+                                  fallback.className = 'text-white font-semibold text-lg';
+                                  fallback.textContent = avatarInitial;
+                                  parent.appendChild(fallback);
+                                }
+                              }}
+                            />
+                          ) : (
+                            <span className="text-white font-semibold text-lg">
+                              {avatarInitial}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900 text-[15px]">{displayName}</p>
+                          <p className="text-gray-500 text-sm mt-0.5">{handle}</p>
+                        </div>
+                        <FollowButton
+                          profile={profile}
+                          variant="default"
+                          size="sm"
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium"
+                        />
                       </div>
-                      <div>
-                        <p className="font-bold text-gray-900 text-[15px]">{person.name}</p>
-                        <p className="text-gray-500 text-sm mt-0.5">{person.username}</p>
-                      </div>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium"
-                      >
-                        Follow
-                      </Button>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="col-span-3 text-center py-8 text-gray-400 text-sm">
                   No users to follow yet
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Topics Section */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900">Topics</h2>
-              <button className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline">
-                Browse
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-4">
-              {topicStats && topicStats.length > 0 ? (
-                topicStats.slice(0, 3).map((topic, index) => (
-                  <div
-                    key={index}
-                    className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-md transition-shadow"
-                  >
-                    <h3 className="text-lg font-bold text-gray-900 mb-2">#{topic.hashtag}</h3>
-                    <p className="text-sm text-gray-500">
-                      {topic.count >= 1000
-                        ? `${(topic.count / 1000).toFixed(1)}k`
-                        : topic.count}{' '}
-                      Suits today
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <div className="col-span-3 text-center py-8 text-gray-400 text-sm">
-                  No topics available yet
                 </div>
               )}
             </div>
@@ -409,16 +398,27 @@ export function Explore() {
                     >
                       <div className="flex items-start gap-4">
                         {/* Profile Picture */}
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
-                          {person.profile_image_blob_id ? (
+                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md overflow-hidden">
+                          {getUserProfileImageUrl(person) ? (
                             <img
-                              src={`https://walrus.sui.io/v1/blobs/${person.profile_image_blob_id}`}
-                              alt={person.username}
+                              src={getUserProfileImageUrl(person)!}
+                              alt={getUserDisplayName(person.owner, person)}
                               className="w-full h-full rounded-full object-cover"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const parent = target.parentElement;
+                                if (parent) {
+                                  const fallback = document.createElement('span');
+                                  fallback.className = 'text-white font-semibold text-lg';
+                                  fallback.textContent = getUserAvatarInitial(person.owner, person);
+                                  parent.appendChild(fallback);
+                                }
+                              }}
                             />
                           ) : (
                             <span className="text-white font-semibold text-lg">
-                              {(person.username || person.owner)[0]?.toUpperCase() || 'U'}
+                              {getUserAvatarInitial(person.owner, person)}
                             </span>
                           )}
                         </div>
@@ -427,11 +427,11 @@ export function Explore() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-bold text-gray-900 text-[15px]">
-                              {person.username || `User${person.owner.slice(2, 6)}`}
+                              {getUserDisplayName(person.owner, person)}
                             </h3>
                           </div>
                           <p className="text-gray-500 text-sm mb-2">
-                            @{person.username || person.owner.slice(0, 6)}
+                            {getUserHandle(person.owner, person)}
                           </p>
                           <p className="text-gray-700 text-sm mb-3 leading-relaxed">
                             {person.bio || 'No bio yet'}
@@ -453,13 +453,12 @@ export function Explore() {
                         </div>
 
                         {/* Follow Button */}
-                        <Button
+                        <FollowButton
+                          profile={person}
                           variant="default"
                           size="sm"
                           className="bg-blue-600 hover:bg-blue-700 text-white font-medium whitespace-nowrap"
-                        >
-                          Follow
-                        </Button>
+                        />
                       </div>
                     </div>
                   ))
